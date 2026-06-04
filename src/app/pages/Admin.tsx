@@ -1,0 +1,795 @@
+import React, { useMemo, useState, useEffect } from 'react';
+import { useSearchParams, Link } from 'react-router-dom';
+import { Settings, Play, Database, CheckCircle2, Users, Calendar, Eye, Trash2, Copy } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { useÉquipes, useMatchs, useTousLesJoueurs } from '../hooks/useSupabase';
+import { créerÉquipe, désactiverÉquipe, supprimerÉquipe, mettreÀJourÉquipe, Équipe } from '../services/équipesService';
+import { mettreÀJourMatch, créerMatch, créerMatchs } from '../services/matchsService';
+import { getUserProfileFromSession, signUpWithUsername } from '../services/authService';
+import { Formation, obtenirFormationÉquipe } from '../services/formationsService';
+import { ImageWithFallback } from '../components/figma/ImageWithFallback';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { SélecteurÉcusson } from '../components/sélecteurs/SélecteurÉcusson';
+import { écussonsDisponibles } from '../donnees/écussons';
+import { clientSupabase } from '../config/supabase';
+import { formaterDate } from '../utils/date';
+
+type AdminMatchData = {
+  score_a: number | null;
+  score_b: number | null;
+  statut: 'à_venir' | 'en_cours' | 'terminé';
+  durée?: string;
+};
+
+type FormationData = {
+  id: string;
+  teamId: string;
+  numberOfPlayers: 5 | 7 | 9 | 11;
+  players: Record<string, string>;
+  savedAt?: string;
+};
+
+const FORMATION_PRESETS: Record<5 | 7 | 9 | 11, Record<string, { topClass: string; leftClass: string; label: string }>> = {
+  5: {
+    goalkeeper: { topClass: 'top-[10%]', leftClass: 'left-[50%]', label: 'GK' },
+    defender_left: { topClass: 'top-[40%]', leftClass: 'left-[25%]', label: 'LD' },
+    defender_right: { topClass: 'top-[40%]', leftClass: 'left-[75%]', label: 'RD' },
+    midfielder: { topClass: 'top-[65%]', leftClass: 'left-[50%]', label: 'MC' },
+    attacker: { topClass: 'top-[85%]', leftClass: 'left-[50%]', label: 'AT' },
+  },
+  7: {
+    goalkeeper: { topClass: 'top-[10%]', leftClass: 'left-[50%]', label: 'GK' },
+    defender_left: { topClass: 'top-[35%]', leftClass: 'left-[20%]', label: 'LD' },
+    defender_center: { topClass: 'top-[35%]', leftClass: 'left-[50%]', label: 'DC' },
+    defender_right: { topClass: 'top-[35%]', leftClass: 'left-[80%]', label: 'RD' },
+    midfielder_left: { topClass: 'top-[60%]', leftClass: 'left-[35%]', label: 'MG' },
+    midfielder_right: { topClass: 'top-[60%]', leftClass: 'left-[65%]', label: 'MD' },
+    attacker: { topClass: 'top-[85%]', leftClass: 'left-[50%]', label: 'AT' },
+  },
+  9: {
+    goalkeeper: { topClass: 'top-[10%]', leftClass: 'left-[50%]', label: 'GK' },
+    defender_left: { topClass: 'top-[35%]', leftClass: 'left-[15%]', label: 'LD' },
+    defender_center1: { topClass: 'top-[35%]', leftClass: 'left-[40%]', label: 'DC' },
+    defender_center2: { topClass: 'top-[35%]', leftClass: 'left-[60%]', label: 'DC' },
+    defender_right: { topClass: 'top-[35%]', leftClass: 'left-[85%]', label: 'RD' },
+    midfielder: { topClass: 'top-[60%]', leftClass: 'left-[50%]', label: 'MC' },
+    attacker_left: { topClass: 'top-[80%]', leftClass: 'left-[30%]', label: 'AG' },
+    attacker_center: { topClass: 'top-[80%]', leftClass: 'left-[50%]', label: 'AC' },
+    attacker_right: { topClass: 'top-[80%]', leftClass: 'left-[70%]', label: 'AD' },
+  },
+  11: {
+    goalkeeper: { topClass: 'top-[10%]', leftClass: 'left-[50%]', label: 'GK' },
+    defender_left: { topClass: 'top-[30%]', leftClass: 'left-[10%]', label: 'LD' },
+    defender_center1: { topClass: 'top-[30%]', leftClass: 'left-[35%]', label: 'DC' },
+    defender_center2: { topClass: 'top-[30%]', leftClass: 'left-[65%]', label: 'DC' },
+    defender_right: { topClass: 'top-[30%]', leftClass: 'left-[90%]', label: 'RD' },
+    midfielder_left: { topClass: 'top-[55%]', leftClass: 'left-[25%]', label: 'MG' },
+    midfielder_center: { topClass: 'top-[55%]', leftClass: 'left-[50%]', label: 'MC' },
+    midfielder_right: { topClass: 'top-[55%]', leftClass: 'left-[75%]', label: 'MD' },
+    attacker_left: { topClass: 'top-[80%]', leftClass: 'left-[20%]', label: 'AG' },
+    attacker_center: { topClass: 'top-[80%]', leftClass: 'left-[50%]', label: 'AC' },
+    attacker_right: { topClass: 'top-[80%]', leftClass: 'left-[80%]', label: 'AD' },
+  },
+};
+
+export const Admin = () => {
+  const { user, loginAsAdmin } = useAuth();
+  
+  const { équipes, chargement: chargementÉquipes, refetch: refetchÉquipes } = useÉquipes();
+  const { matchs, chargement: chargementMatchs, refetch: refetchMatchs } = useMatchs();
+  const { joueurs, chargement: chargementJoueurs } = useTousLesJoueurs();
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab') || 'overview';
+  const [activeTab, setActiveTab] = useState<string>(initialTab);
+
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam && ['overview', 'teams', 'compositions', 'matches'].includes(tabParam)) {
+      setActiveTab(tabParam);
+      if (tabParam === 'teams' && window.location.hash === '#create-team-form') {
+        setTimeout(() => {
+          const el = document.getElementById('create-team-form');
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            const input = el.querySelector('input');
+            if (input) input.focus();
+          }
+        }, 100);
+      }
+    }
+  }, [searchParams]);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [editingMatchId, setEditingMatchId] = useState<string | null>(null);
+  const [matchData, setMatchData] = useState<Record<string, AdminMatchData>>({});
+  const [selectedTeamForCompo, setSelectedTeamForCompo] = useState<string | null>(null);
+  const [teamForm, setTeamForm] = useState({ nom: '', classe: '', écusson_id: '', description: '', code_acces: '', capitaine_nom: '' });
+  const [manualMatchForm, setManualMatchForm] = useState<{
+    équipe_a_id: string;
+    équipe_b_id: string;
+    date: string;
+    heure: string;
+    durée: string;
+    lieu: string;
+  }>({
+    équipe_a_id: '',
+    équipe_b_id: '',
+    date: new Date().toISOString().slice(0, 10),
+    heure: '09:00',
+    durée: '25',
+    lieu: 'Terrain Central ENSIT',
+  });
+  const [isCreatingMatch, setIsCreatingMatch] = useState(false);
+  const [manualMatchError, setManualMatchError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setIsAdminAuthenticated(user?.role === 'admin');
+  }, [user]);
+
+  useEffect(() => {
+    const chargerFormations = async () => {
+      if (!équipes || équipes.length === 0) return;
+      const résultats: Record<string, Formation | null> = {};
+      await Promise.all(
+        équipes.map(async (équipe) => {
+          const formation = await obtenirFormationÉquipe(équipe.id);
+          résultats[équipe.id] = formation;
+        })
+      );
+      setFormations(résultats);
+    };
+
+    chargerFormations();
+  }, [équipes]);
+
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => {
+    return user?.role === 'admin';
+  });
+  const [adminCode, setAdminCode] = useState('');
+  const [loginError, setLoginError] = useState('');
+
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (adminCode === 'ensit2026') {
+      try {
+        setLoginError('');
+        const { data, error } = await clientSupabase.auth.signInWithPassword({
+          email: 'admin_tournoi@tournoi-foot.com',
+          password: 'AdminPassword2026!'
+        });
+        if (error) throw error;
+
+        const profile = await getUserProfileFromSession(data.session);
+        if (!profile || profile.role !== 'admin') {
+          throw new Error('Le compte administrateur n’est pas autorisé. Vérifiez la configuration Supabase.');
+        }
+
+        localStorage.setItem('admin_authenticated', 'true');
+        loginAsAdmin();
+        setIsAdminAuthenticated(true);
+      } catch (err: any) {
+        console.error("Admin signin error:", err);
+        setLoginError(err.message || 'Erreur lors de la connexion à la base de données.');
+      }
+    } else {
+      setLoginError('Code administrateur incorrect.');
+    }
+  };
+
+  const handleAdminLogout = async () => {
+    localStorage.removeItem('admin_authenticated');
+    try {
+      await clientSupabase.auth.signOut();
+    } catch (err) {
+      console.warn('Erreur lors de la déconnexion admin Supabase :', err);
+    }
+    setIsAdminAuthenticated(false);
+  };
+
+  if (!isAdminAuthenticated) {
+    return (
+      <div className="min-h-screen bg-mesh flex items-center justify-center p-4 relative overflow-hidden -m-8">
+        <div className="w-full max-w-md relative z-10 animate-slide-up">
+          <div className="text-center mb-8">
+            <div className="w-20 h-20 mx-auto rounded-2xl flex items-center justify-center shadow-2xl mb-6 hero-gradient-purple">
+              <Settings className="w-10 h-10 text-white" />
+            </div>
+            <h1 className="text-3xl font-display font-bold mb-1 text-primary">Espace Admin</h1>
+            <p className="text-sm text-muted">Accès restreint aux organisateurs</p>
+          </div>
+
+          <div className="login-card p-8 glass card-3d">
+            {loginError && (
+              <div className="mb-5 rounded-xl px-4 py-3 text-sm font-medium bg-red-50 border border-red-200 text-red-600">
+                ❌ {loginError}
+              </div>
+            )}
+            <form onSubmit={handleAdminLogin} className="space-y-5">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Code d'accès administrateur</label>
+                <div className="relative">
+                  <Database className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 pointer-events-none text-muted" />
+                  <input
+                    value={adminCode}
+                    onChange={e => setAdminCode(e.target.value)}
+                    type="password"
+                    required
+                    className="input-field pl-10"
+                    placeholder="Entrez le code secret"
+                    autoFocus
+                  />
+                </div>
+              </div>
+              <button type="submit" className="btn-primary mt-2" disabled={!adminCode}>
+                🔓 Accéder au tableau de bord
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const obtenirURLÉcusson = (écussonId: string) => écussonsDisponibles.find(e => e.id === écussonId)?.url || '';
+  
+  const CLASSES_ENSIT = ['P1', 'P2', 'ING1', 'ING2', 'ING3'];
+
+  const [copiedCodeTeamId, setCopiedCodeTeamId] = useState<string | null>(null);
+  const [formations, setFormations] = useState<Record<string, Formation | null>>({});
+
+  const handleResetTournament = async () => {
+    if (confirm("Attention : cela supprimera tous les matchs ainsi que tous les buts et passes enregistrés. Voulez-vous continuer ?")) {
+      setIsDeleting(true);
+      try {
+        const { error: errorButs } = await clientSupabase.from('buts_matchs').delete().neq('id', '0');
+        if (errorButs) console.warn("Erreur suppression buts:", errorButs);
+        const { error: errorPasses } = await clientSupabase.from('passes_matchs').delete().neq('id', '0');
+        if (errorPasses) console.warn("Erreur suppression passes:", errorPasses);
+        const { error: errorMatchs } = await clientSupabase.from('matchs').delete().neq('id', '0');
+        if (errorMatchs) throw errorMatchs;
+        
+        await refetchMatchs();
+      } catch (err) {
+        console.error("Erreur lors de la réinitialisation :", err);
+        alert("Une erreur est survenue lors de la réinitialisation.");
+      } finally {
+        setIsDeleting(false);
+      }
+    }
+  };
+  
+  const handleTeamFormChange = (field: string, value: string) => setTeamForm(prev => ({
+    ...prev,
+    [field]: field === 'nom' || field === 'capitaine_nom' ? value.toUpperCase() : value
+  }));
+  
+  const handleAddTeam = async () => {
+    const normalizedNom = teamForm.nom.trim().toUpperCase();
+    const captainName = teamForm.capitaine_nom.trim().toUpperCase();
+
+    if (!normalizedNom || !teamForm.classe.trim()) {
+      alert("Le nom et la classe sont obligatoires.");
+      return;
+    }
+
+    if (équipes.some(team => team.nom.trim().toUpperCase() === normalizedNom)) {
+      alert("Une équipe avec ce nom existe déjà. Choisissez un autre nom.");
+      return;
+    }
+    
+    // Auto-generate access code: e.g. "ING1-LIONS-4829"
+    const cleanNom = normalizedNom.replace(/\s+/g, '').replace(/[^A-Z0-9]/g, '').substring(0, 6);
+    const generatedCode = `${teamForm.classe.toUpperCase()}-${cleanNom}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    try {
+      const equipe = await créerÉquipe({
+        nom: normalizedNom,
+        classe: teamForm.classe.trim(),
+        écusson_id: teamForm.écusson_id || 'real-madrid',
+        description: teamForm.description || `Équipe ${normalizedNom} de la classe ${teamForm.classe.trim()}`,
+        code_acces: generatedCode
+      });
+      
+      if (!equipe) {
+        alert("Erreur inattendue lors de la création de l'équipe.");
+        return;
+      }
+
+      if (captainName) {
+        try {
+          const password = `${generatedCode}_ENSITCup_Secure`;
+          const captainProfile = await signUpWithUsername(captainName, password, 'captain', teamForm.classe.trim(), equipe.id);
+          if (captainProfile?.id) {
+            await mettreÀJourÉquipe(equipe.id, { capitaine_id: captainProfile.id });
+          }
+        } catch (captainErr: any) {
+          console.warn('Erreur lors de la création du compte capitaine :', captainErr);
+          alert(`L'équipe a été créée, mais le compte du capitaine n'a pas pu être généré : ${captainErr?.message || captainErr}`);
+        }
+      }
+      
+      setTeamForm({ nom: '', classe: '', écusson_id: '', description: '', code_acces: '', capitaine_nom: '' });
+      refetchÉquipes();
+      alert(`Équipe ${equipe.nom} créée avec succès !`);
+    } catch (err: any) {
+      console.error('Erreur création équipe :', err);
+      alert("Erreur lors de la création de l'équipe : " + (err?.message || JSON.stringify(err) || err));
+    }
+  };
+
+  const handleDisqualifyTeam = async (teamId: string) => {
+    await désactiverÉquipe(teamId);
+    refetchÉquipes();
+  };
+
+  const handleDeleteTeam = async (teamId: string) => {
+    if (confirm('Voulez-vous vraiment supprimer cette équipe ?')) {
+      await supprimerÉquipe(teamId);
+      refetchÉquipes();
+    }
+  };
+
+  const handleEditMatch = (matchId: string) => {
+    setEditingMatchId(prev => prev === matchId ? null : matchId);
+    if (!matchData[matchId]) {
+      const match = matchs.find(m => m.id === matchId);
+      if (match) {
+        setMatchData(prev => ({ 
+          ...prev, 
+          [matchId]: { 
+            score_a: match.score_a, 
+            score_b: match.score_b, 
+            statut: match.statut 
+          } 
+        }));
+      }
+    }
+  };
+
+  const handleMatchScoreChange = (matchId: string, team: 'A' | 'B', value: string) => {
+    const score = value === '' ? null : parseInt(value, 10);
+    setMatchData(prev => ({ 
+      ...prev, 
+      [matchId]: { 
+        ...prev[matchId], 
+        [team === 'A' ? 'score_a' : 'score_b']: score 
+      } 
+    }));
+  };
+
+  const handleMatchStatusChange = (matchId: string, value: 'à_venir' | 'en_cours' | 'terminé') => {
+    setMatchData(prev => ({ 
+      ...prev, 
+      [matchId]: { 
+        ...prev[matchId], 
+        statut: value 
+      } 
+    }));
+  };
+
+  const handleSaveMatch = async (matchId: string) => { 
+    const cur = matchData[matchId]; 
+    if (!cur) return; 
+    
+    await mettreÀJourMatch(matchId, {
+      score_a: cur.score_a ?? 0,
+      score_b: cur.score_b ?? 0,
+      statut: cur.statut
+    });
+    
+    setEditingMatchId(null); 
+    refetchMatchs();
+  };
+
+  const upcomingMatches = matchs.filter(m => m.statut === 'à_venir');
+  const finishedMatches = matchs.filter(m => m.statut === 'terminé');
+
+  const progressWidthClasses = [
+    'w-[0%]', 'w-[10%]', 'w-[20%]', 'w-[30%]', 'w-[40%]', 'w-[50%]', 'w-[60%]', 'w-[70%]', 'w-[80%]', 'w-[90%]', 'w-[100%]'
+  ];
+  const inscribedProgressClass = progressWidthClasses[Math.min(Math.max(Math.round((équipes.length / 10) * 10), 0), 10)];
+
+  const renderTeamActionButtons = (team: Équipe) => (
+    <div className="flex gap-2 mt-2">
+      <button onClick={() => handleDisqualifyTeam(team.id)} className="px-3 py-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/20 rounded-lg font-medium text-sm transition-colors">Désactiver</button>
+      <button onClick={() => handleDeleteTeam(team.id)} className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg font-medium text-sm transition-colors flex items-center gap-1"><Trash2 className="w-4 h-4" /> Supprimer</button>
+    </div>
+  );
+
+  return (
+    <div className="p-8 max-w-7xl mx-auto space-y-8 animate-slide-up">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-2">
+        <div className="w-1 h-8 rounded-full stripe-purple" />
+        <div>
+          <h1 className="text-2xl font-display font-bold flex items-center gap-3 text-primary">
+            <Settings className="w-6 h-6 text-purple-400" /> Tableau de Bord Administrateur
+          </h1>
+          <p className="text-sm text-muted">
+            Gestion centralisée du tournoi ENSIT Cup.
+          </p>
+        </div>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-4 mb-6 bg-panel-lighter border-panel rounded-radius-xl">
+          <TabsTrigger value="overview" className="rounded-radius-lg">Vue d'ensemble</TabsTrigger>
+          <TabsTrigger value="teams" className="rounded-radius-lg">Équipes</TabsTrigger>
+          <TabsTrigger value="compositions" className="rounded-radius-lg">Compositions</TabsTrigger>
+          <TabsTrigger value="matches" className="rounded-radius-lg">Matchs</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="glass card-3d p-6">
+            <h2 className="text-lg font-display font-bold mb-4 flex items-center gap-2 text-primary">
+              <Database className="w-5 h-5 text-sky-500" /> Statut des inscriptions
+            </h2>
+            <div className="space-y-4">
+              <div className="flex justify-between items-center p-4 rounded-xl bg-panel-soft">
+                <span className="font-semibold text-muted">Équipes inscrites</span>
+                <span className="font-bold text-primary">{équipes.length} / 10</span>
+              </div>
+              <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden">
+                <div className={`h-2.5 rounded-full bg-progress-blue ${inscribedProgressClass}`} />
+              </div>
+              <div className="pt-4 border-t border-panel text-muted space-y-2 text-sm">
+                <p>✓ Équipes confirmées : <strong className="text-primary">{équipes.length}</strong></p>
+                <p>○ Places disponibles : <strong className="text-primary">{Math.max(10 - équipes.length, 0)}</strong></p>
+              </div>
+            </div>
+          </div>
+
+          <div className="glass card-3d p-6">
+            <h2 className="text-lg font-display font-bold mb-4 flex items-center gap-2 text-primary">
+              <Play className="w-5 h-5 text-accent-strong" /> Moteur de tournoi
+            </h2>
+              <p className="text-sm mb-4 text-muted">Le planning des rencontres se saisit manuellement dans l’onglet <strong>Matchs</strong>. Ce système est plus simple, plus stable et évite les erreurs de création automatique.</p>
+            <div className="text-xs p-3 rounded-lg mb-4 bg-panel-info">
+              ✍️ Ajoutez les matchs un à un, puis consultez-les et modifiez-les dans l’onglet <strong>Matchs</strong>.
+            </div>
+            <button onClick={() => setActiveTab('matches')} className="btn-primary w-full mb-4">
+              <Play className="w-5 h-5" /> Aller à l’onglet Matchs
+            </button>
+            {matchs.length > 0 ? (
+              <div className="flex flex-col gap-3">
+                <div className="p-4 rounded-xl flex flex-col items-center text-center gap-2 bg-panel-success">
+                  <CheckCircle2 className="w-8 h-8" />
+                  <div>
+                    <strong className="block mb-1">Le calendrier contient des matchs</strong>
+                    <span className="text-sm text-muted">Vous pouvez supprimer tous les matchs via le bouton ci-dessous.</span>
+                  </div>
+                </div>
+                <button onClick={handleResetTournament} disabled={isDeleting} className="btn-secondary w-full py-2.5 text-red-400 hover:text-red-300 border-red-500/20 hover:bg-red-500/10 font-semibold btn-border-red">
+                  {isDeleting ? "Réinitialisation..." : "Réinitialiser tous les matchs"}
+                </button>
+              </div>
+            ) : (
+              <p className="text-xs text-center mt-2 text-muted">Aucun match créé. Allez dans l’onglet Matchs pour commencer la saisie.</p>
+            )}
+          </div>
+
+          <div className="glass card-3d p-6 md:col-span-2">
+            <h2 className="text-lg font-display font-bold mb-4 flex items-center gap-2 text-primary">
+              <Calendar className="w-5 h-5 text-accent-strong" /> Résumé des matchs
+            </h2>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="p-4 rounded-xl text-center bg-panel-info">
+                <div className="text-2xl font-bold text-sky-500">{upcomingMatches.length}</div>
+                <div className="text-xs font-semibold uppercase tracking-wider mt-1 text-muted">Matchs à venir</div>
+              </div>
+              <div className="p-4 rounded-xl text-center bg-panel-success">
+                <div className="text-2xl font-bold text-accent-strong">{finishedMatches.length}</div>
+                <div className="text-xs font-semibold uppercase tracking-wider mt-1 text-muted">Matchs terminés</div>
+              </div>
+              <div className="p-4 rounded-xl text-center bg-panel-lighter">
+                <div className="text-2xl font-bold text-primary">{matchs.length}</div>
+                <div className="text-xs font-semibold uppercase tracking-wider mt-1 text-muted">Total matchs</div>
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="teams">
+          <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
+            <div className="glass card-3d p-6">
+              <h2 className="text-lg font-display font-bold mb-6 flex items-center gap-2 text-primary">
+                <Users className="w-5 h-5 text-sky-500" /> Gestion des équipes ({équipes.length})
+              </h2>
+              <div className="space-y-4">
+                {chargementÉquipes ? (
+                  <p className="text-muted">Chargement...</p>
+                ) : équipes.map(team => {
+                  const teamPlayers = joueurs.filter(p => p.équipe_id === team.id);
+                  return (
+                    <div key={team.id} className="flex flex-col p-4 rounded-xl bg-panel-soft">
+                      <div className="flex items-center justify-between gap-4 mb-3">
+                        <div className="flex items-center gap-4">
+                          <ImageWithFallback src={team.logo} alt={team.nom} className="w-10 h-10 rounded-full object-cover" />
+                          <div>
+                            <div className="font-semibold text-primary">{team.nom}</div>
+                            <div className="text-xs text-muted">Classe {team.classe} • {teamPlayers.length} joueurs</div>
+                          </div>
+                        </div>
+                        <span className={`text-xs font-bold px-2 py-1 rounded-full ${
+                          team.statut === 'disqualifié' 
+                            ? 'bg-red-500/10 text-red-400 border border-red-500/20' 
+                            : 'bg-green-500/10 text-green-400 border border-green-500/20'
+                        }`}>
+                          {team.statut === 'disqualifié' ? 'Désactivée' : 'Active'}
+                        </span>
+                      </div>
+                      <div className="text-sm px-3 py-2 rounded-lg mb-3 flex flex-col gap-3 bg-panel-lighter">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-muted">Code d'accès Capitaine :</span>
+                          <code className="font-bold text-xs text-accent-strong">{team.code_acces || 'Non défini'}</code>
+                        </div>
+                        {team.code_acces && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await navigator.clipboard.writeText(team.code_acces!);
+                                setCopiedCodeTeamId(team.id);
+                                setTimeout(() => setCopiedCodeTeamId(null), 2000);
+                              } catch (err) {
+                                console.error('Erreur copie code :', err);
+                                alert('Impossible de copier le code. Vérifie que ton navigateur autorise le presse-papier.');
+                              }
+                            }}
+                            className="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-lg bg-slate-900/70 border border-slate-700 text-slate-100 hover:bg-slate-800 transition"
+                          >
+                            <Copy className="w-4 h-4" />
+                            {copiedCodeTeamId === team.id ? 'Copié !' : 'Copier le code'}
+                          </button>
+                        )}
+                      </div>
+                      {renderTeamActionButtons(team)}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div id="create-team-form" className="glass card-3d p-6 h-fit">
+              <h2 className="text-lg font-display font-bold mb-6 text-primary">Créer une équipe</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Nom de l'équipe</label>
+                  <input type="text" value={teamForm.nom} onChange={e => handleTeamFormChange('nom', e.target.value)} className="input-field pl-3" placeholder="EX: LIONS" />
+                </div>
+                <div>
+                  <label htmlFor="classe" className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Classe</label>
+                  <select id="classe" value={teamForm.classe} onChange={e => handleTeamFormChange('classe', e.target.value)} className="select-field">
+                    <option value="">— Sélectionner une classe —</option>
+                    {CLASSES_ENSIT.map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Nom du capitaine</label>
+                  <input type="text" value={teamForm.capitaine_nom} onChange={e => handleTeamFormChange('capitaine_nom', e.target.value)} className="input-field pl-3" placeholder="Nom du capitaine" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Code d'accès secret (Généré)</label>
+                  <div className="input-field font-mono flex items-center bg-slate-800/40 text-slate-400 select-none cursor-not-allowed text-xs pl-3 h-10 border-dashed">
+                    {teamForm.nom && teamForm.classe 
+                      ? `${teamForm.classe}-${teamForm.nom.trim().replace(/\s+/g, '').replace(/[^A-Z0-9]/g, '').substring(0, 5)}-XXXX`
+                      : "Saisissez le nom et la classe..."
+                    }
+                  </div>
+                  <p className="text-[10px] mt-1 text-muted opacity-70">Ce code sera généré et affiché dans la liste des équipes.</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Sélectionner un écusson</label>
+                  <SélecteurÉcusson écussonSélectionné={teamForm.écusson_id} onÉcussonChange={(id: string) => { handleTeamFormChange('écusson_id', id); }} />
+                </div>
+
+                <button onClick={handleAddTeam} className="btn-primary w-full mt-2">Créer et générer accès</button>
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="compositions">
+          <div className="space-y-4">
+            {équipes.map(team => {
+              const teamPlayers = joueurs.filter(p => p.équipe_id === team.id);
+              const savedFormation = formations[team.id];
+              const formationConfig = savedFormation?.configuration as FormationData | undefined;
+              const formationPositions = formationConfig ? FORMATION_PRESETS[formationConfig.numberOfPlayers] : null;
+              const assignedCount = formationConfig ? Object.keys(formationConfig.players).length : 0;
+              const savedAt = formationConfig?.savedAt || savedFormation?.date_sauvegarde;
+
+              return (
+                <div key={team.id} className="glass overflow-hidden">
+                  <button type="button" className="w-full p-4 hover:bg-white/5 cursor-pointer transition-colors flex items-center justify-between" onClick={() => setSelectedTeamForCompo(selectedTeamForCompo === team.id ? null : team.id)}>
+                    <div className="flex items-center gap-3">
+                      <ImageWithFallback src={team.logo} alt={team.nom} className="w-10 h-10 rounded-full object-cover" />
+                      <div className="text-left">
+                        <div className="font-semibold text-primary">{team.nom}</div>
+                        <div className="text-xs text-muted">
+                          {teamPlayers.length} joueurs • {formationConfig ? `${formationConfig.numberOfPlayers}v${formationConfig.numberOfPlayers}` : 'Pas de composition'}
+                        </div>
+                      </div>
+                    </div>
+                    <Eye className="w-5 h-5 text-muted" />
+                  </button>
+                  {selectedTeamForCompo === team.id && (
+                    <div className="p-6 border-t animate-slide-up border-panel bg-panel-dark">
+                      <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-6">
+                        <div className="space-y-4">
+                          <div className="rounded-3xl border border-slate-700 bg-slate-950 p-4">
+                            <div className="flex items-center justify-between mb-4">
+                              <div>
+                                <h3 className="font-semibold text-primary">Mini-visualisation</h3>
+                                <p className="text-xs text-muted">
+                                  {formationConfig ? `Formation ${formationConfig.numberOfPlayers}v${formationConfig.numberOfPlayers}` : 'Aucune composition enregistrée'}
+                                </p>
+                              </div>
+                              <span className="text-[10px] uppercase tracking-[0.18em] text-slate-400">{formationPositions ? `${assignedCount}/${Object.keys(formationPositions).length}` : '0/0'}</span>
+                            </div>
+
+                            <div className="relative w-full aspect-[3/4] rounded-3xl bg-gradient-to-b from-slate-900 to-slate-950 border border-slate-800 overflow-hidden">
+                              <div className="absolute inset-x-6 top-6 h-px bg-slate-700" />
+                              <div className="absolute inset-x-6 bottom-6 h-px bg-slate-700" />
+                              <div className="absolute inset-y-6 left-6 w-px bg-slate-700" />
+                              <div className="absolute inset-y-6 right-6 w-px bg-slate-700" />
+                              {formationPositions ? Object.entries(formationPositions).map(([position, details]) => {
+                                const playerId = formationConfig?.players?.[position];
+                                const player = playerId ? teamPlayers.find(p => p.id === playerId) : null;
+                                return (
+                                  <div key={position} className={`absolute ${details.topClass} ${details.leftClass} -translate-x-1/2 -translate-y-1/2`}>
+                                    <div className="w-12 h-12 rounded-full border border-white/10 bg-slate-800/90 shadow-lg flex flex-col items-center justify-center text-[10px] leading-tight text-white">
+                                      <span className="font-bold">{details.label}</span>
+                                      <span className="text-[10px] text-slate-300 mt-0.5">{player ? `#${player.numéro}` : 'vide'}</span>
+                                    </div>
+                                  </div>
+                                );
+                              }) : (
+                                <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-400 px-4 text-center">
+                                  Aucune composition tactique enregistrée pour cette équipe.
+                                </div>
+                              )}
+                            </div>
+
+                            {formationConfig && (
+                              <div className="mt-4 text-sm space-y-2">
+                                <p className="text-slate-300">Enregistrée le {savedAt ? new Date(savedAt).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</p>
+                                <p className="text-slate-400">Joueurs assignés : <strong className="text-white">{assignedCount}</strong> / {Object.keys(formationPositions || {}).length}</p>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="rounded-3xl border border-slate-700 bg-slate-900 p-4">
+                            <h4 className="font-semibold mb-3 text-primary">Détails de composition</h4>
+                            {formationConfig ? (
+                              <ul className="space-y-2 text-sm text-slate-300">
+                                {Object.entries(formationPositions || {}).map(([position, details]) => {
+                                  const playerId = formationConfig.players?.[position];
+                                  const player = playerId ? teamPlayers.find(p => p.id === playerId) : null;
+                                  return (
+                                    <li key={position} className="flex items-center justify-between gap-3 rounded-2xl px-3 py-2 bg-slate-950/70">
+                                      <span>{details.label}</span>
+                                      <span className="text-slate-200">{player ? `${player.nom} (#${player.numéro})` : 'Libre'}</span>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            ) : (
+                              <p className="text-sm text-slate-500">Cette équipe n’a pas encore de formation tactique enregistrée.</p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div>
+                          <h3 className="font-semibold mb-4 text-primary">Joueurs</h3>
+                          <div className="space-y-3">
+                            {teamPlayers.length === 0 ? (
+                              <p className="text-sm text-muted">Aucun joueur inscrit.</p>
+                            ) : teamPlayers.map(player => (
+                              <div key={player.id} className="rounded-xl p-3 border bg-panel-soft">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div>
+                                    <p className="font-medium text-primary">{player.nom}</p>
+                                    <p className="text-xs text-muted">{player.poste} • #{player.numéro}</p>
+                                  </div>
+                                  <span className="text-xs font-semibold px-2 py-1 rounded bg-white/5 text-primary">
+                                    {player.buts ?? 0} buts • {player.passes_décisives ?? 0} passes
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="matches">
+          <div className="space-y-6">
+            <div className="glass p-6">
+              <h2 className="text-lg font-display font-bold mb-4 flex items-center gap-2 text-primary">
+                <Calendar className="w-5 h-5 text-accent-strong" /> Tous les Matchs
+              </h2>
+              <div className="grid gap-4 lg:grid-cols-1 mb-6">
+                <div className="rounded-3xl border border-slate-700 bg-slate-950/80 p-6 flex flex-col items-start gap-4">
+                  <h3 className="text-sm font-semibold text-primary">Planificateur de rencontres</h3>
+                  <p className="text-sm text-slate-400">L’outil de planification des rencontres a été déplacé vers un planificateur dédié. Utilisez l’interface professionnelle (drag & drop) pour agencer rapidement les matchs et publier le planning.</p>
+                  <Link to="/admin/scheduler" className="btn-primary px-4 py-2">Ouvrir le planificateur</Link>
+                </div>
+              </div>
+              {matchs.length === 0 ? (
+                <p className="text-center py-8 text-muted">Aucun match</p>
+              ) : (
+                <div className="space-y-4">
+                  {matchs.map(match => {
+                    const teamA = équipes.find(t => t.id === match.équipe_a_id);
+                    const teamB = équipes.find(t => t.id === match.équipe_b_id);
+                    const current = matchData[match.id] ?? { score_a: match.score_a, score_b: match.score_b, statut: match.statut };
+                    return (
+                      <div key={match.id} className="rounded-xl p-4 border bg-panel-ultra-soft border-panel">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
+                          <div className="text-sm text-muted">
+                            {formaterDate(match.date)} à {match.heure} · {match.lieu} · <span className="capitalize font-semibold text-accent-strong">{match.statut}</span>
+                          </div>
+                          <button onClick={() => handleEditMatch(match.id)} className={`btn-secondary w-fit py-1.5 px-3 text-xs ${editingMatchId === match.id ? 'btn-accent-on' : ''}`}>
+                            {editingMatchId === match.id ? 'Fermer' : 'Remplir'}
+                          </button>
+                        </div>
+                        <div className="flex items-center justify-between mb-4 gap-4">
+                          <div className="flex items-center gap-3 flex-1">
+                            <ImageWithFallback src={teamA?.logo || ''} alt={teamA?.nom || ''} className="w-8 h-8 rounded-full object-cover" />
+                            <span className="font-semibold text-primary">{teamA?.nom}</span>
+                          </div>
+                          <div className="text-2xl font-black text-white-10">VS</div>
+                          <div className="flex items-center gap-3 flex-1 justify-end">
+                            <span className="font-semibold text-primary">{teamB?.nom}</span>
+                            <ImageWithFallback src={teamB?.logo || ''} alt={teamB?.nom || ''} className="w-8 h-8 rounded-full object-cover" />
+                          </div>
+                        </div>
+                        {editingMatchId === match.id && (
+                          <div className="border-t border-panel pt-4 space-y-4 animate-slide-up">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Score {teamA?.nom}</label>
+                                <input type="number" min="0" value={current.score_a ?? ''} onChange={e => handleMatchScoreChange(match.id, 'A', e.target.value)} className="input-field pl-3" placeholder="0" />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Score {teamB?.nom}</label>
+                                <input type="number" min="0" value={current.score_b ?? ''} onChange={e => handleMatchScoreChange(match.id, 'B', e.target.value)} className="input-field pl-3" placeholder="0" />
+                              </div>
+                              <div className="md:col-span-2">
+                                <label htmlFor={`statut-${match.id}`} className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Statut</label>
+                                <select id={`statut-${match.id}`} value={current.statut} onChange={e => handleMatchStatusChange(match.id, e.target.value as any)} className="select-field">
+                                  <option value="à_venir">À venir</option>
+                                  <option value="en_cours">En cours</option>
+                                  <option value="terminé">Terminé</option>
+                                </select>
+                              </div>
+                            </div>
+                            <div className="flex flex-col gap-3 md:flex-row">
+                              <button onClick={() => handleSaveMatch(match.id)} className="btn-primary py-2 text-sm flex-1">Enregistrer le match</button>
+                              <button onClick={() => setEditingMatchId(null)} className="btn-secondary py-2 text-sm flex-1">Annuler</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+};
+
+export default Admin;
