@@ -104,9 +104,8 @@ const SidebarItem = ({ to, icon, label, isAdmin }: { to: string; icon: React.Rea
     to={to}
     end={to === '/'}
     className={({ isActive }) =>
-      `sidebar-nav-item ${isActive ? 'active' : ''}`
+      `sidebar-nav-item ${isActive ? 'active' : ''} ${isAdmin ? 'admin-nav' : ''}`
     }
-    style={isAdmin ? ({ isActive }: { isActive: boolean }) => isActive ? { background: 'linear-gradient(135deg, rgba(124,58,237,0.15), rgba(79,70,229,0.08))', borderColor: 'rgba(124,58,237,0.3)', color: '#a78bfa' } : undefined : undefined}
   >
     <span className="w-4 h-4 flex-shrink-0">{icon}</span>
     <span>{label}</span>

@@ -381,9 +381,12 @@ html, body, #root {
 .bg-mesh {
   background-color: var(--color-bg);
   background-image:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'><circle cx='32' cy='32' r='30' fill='none' stroke='%2300e676' stroke-opacity='0.06' stroke-width='2'/><path d='M18 28 L26 23 L34 28 L30 36 L22 36 Z' fill='%2300e676' fill-opacity='0.06'/></svg>"),
     radial-gradient(at 20% 20%, rgba(0,230,118,0.07) 0%, transparent 50%),
     radial-gradient(at 80% 80%, rgba(124,58,237,0.07) 0%, transparent 50%),
     radial-gradient(at 50% 50%, rgba(0,0,0,0) 0%, var(--color-bg) 100%);
+  background-repeat: repeat, no-repeat, no-repeat, no-repeat;
+  background-size: 120px 120px, auto, auto, cover;
   background-attachment: fixed;
 }
 
@@ -392,6 +395,38 @@ html, body, #root {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'><circle cx='32' cy='32' r='30' fill='none' stroke='%2300e676' stroke-opacity='0.06' stroke-width='2'/><path d='M20 28 L28 24 L36 28 L32 36 L24 36 Z' fill='%2300e676' fill-opacity='0.06'/></svg>"), radial-gradient(at 20% 20%, rgba(0,230,118,0.03) 0%, transparent 50%), radial-gradient(at 80% 80%, rgba(124,58,237,0.03) 0%, transparent 50%);
   background-repeat: repeat;
   background-size: 120px 120px, auto, auto;
+}
+
+/* Progress indicator transforms */
+.progress-offset-0 { transform: translateX(0%); }
+.progress-offset-5 { transform: translateX(-5%); }
+.progress-offset-10 { transform: translateX(-10%); }
+.progress-offset-15 { transform: translateX(-15%); }
+.progress-offset-20 { transform: translateX(-20%); }
+.progress-offset-25 { transform: translateX(-25%); }
+.progress-offset-30 { transform: translateX(-30%); }
+.progress-offset-35 { transform: translateX(-35%); }
+.progress-offset-40 { transform: translateX(-40%); }
+.progress-offset-45 { transform: translateX(-45%); }
+.progress-offset-50 { transform: translateX(-50%); }
+.progress-offset-55 { transform: translateX(-55%); }
+.progress-offset-60 { transform: translateX(-60%); }
+.progress-offset-65 { transform: translateX(-65%); }
+.progress-offset-70 { transform: translateX(-70%); }
+.progress-offset-75 { transform: translateX(-75%); }
+.progress-offset-80 { transform: translateX(-80%); }
+.progress-offset-85 { transform: translateX(-85%); }
+.progress-offset-90 { transform: translateX(-90%); }
+.progress-offset-95 { transform: translateX(-95%); }
+.progress-offset-100 { transform: translateX(-100%); }
+
+.chart-tooltip-indicator {
+  background-color: var(--chart-item-color, currentColor);
+  border-color: var(--chart-item-color, currentColor);
+}
+
+.chart-legend-swatch {
+  background-color: var(--chart-item-color, currentColor);
 }
 
 /* =====================

@@ -5,6 +5,18 @@ import * as ProgressPrimitive from "@radix-ui/react-progress";
 
 import { cn } from "./utils";
 
+const PROGRESS_STEP_CLASSES = new Map(
+  Array.from({ length: 21 }, (_, index) => {
+    const percent = index * 5;
+    return [percent, `progress-offset-${100 - percent}`];
+  }),
+);
+
+function getProgressClass(value?: number) {
+  const normalized = Math.max(0, Math.min(100, Math.round((value ?? 0) / 5) * 5));
+  return PROGRESS_STEP_CLASSES.get(normalized) ?? 'progress-offset-100';
+}
+
 function Progress({
   className,
   value,
@@ -21,8 +33,10 @@ function Progress({
     >
       <ProgressPrimitive.Indicator
         data-slot="progress-indicator"
-        className="bg-primary h-full w-full flex-1 transition-all"
-        style={{ transform: `translateX(-${100 - (value || 0)}%)` }}
+        className={cn(
+          "bg-primary h-full w-full flex-1 transition-all",
+          getProgressClass(value),
+        )}
       />
     </ProgressPrimitive.Root>
   );
