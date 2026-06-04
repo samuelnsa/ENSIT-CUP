@@ -102,26 +102,24 @@ export const Login = () => {
       <div className="login-orb login-orb-green w-96 h-96 -top-32 -left-32 opacity-30" />
       <div className="login-orb login-orb-purple w-80 h-80 -bottom-20 -right-20 opacity-20 delay-2s" />
 
-      <div className="w-full max-w-md relative z-10">
-      
-      <div className="w-full max-w-md relative z-10">
+      <div className="w-full max-w-md relative z-10 football-bg">
         {/* Header */}
-        <div className="text-center mb-8 animate-slide-up">
+          <div className="text-center mb-8">
           {/* Trophy icon with glow */}
           <div className="relative w-24 h-24 mx-auto mb-6">
             <div className="absolute inset-0 rounded-full blur-2xl opacity-40 orb-gradient" />
             <div className="absolute inset-0 rounded-full border border-green-400/20 orb-breathe" />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-20 h-20 rounded-2xl flex items-center justify-center shadow-2xl float-anim trophy-bg">
-                <Trophy className="w-10 h-10 text-black" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-20 h-20 rounded-2xl flex items-center justify-center shadow-2xl trophy-bg">
+                  <Trophy className="w-10 h-10 text-black" />
+                </div>
               </div>
-            </div>
           </div>
-          <h1 className="text-3xl font-display font-bold gradient-text mb-1">ENSIT Cup</h1>
+          <h1 className="text-3xl font-display font-bold app-title mb-1">ENSIT Cup</h1>
         </div>
 
         {/* Form Card */}
-        <div className="login-card p-8 animate-slide-up delay-100">
+          <div className="login-card p-8 delay-100">
           {/* Header card */}
           <div className="flex items-center gap-3 mb-6 pb-5 border-b border-panel">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-accent-weak">

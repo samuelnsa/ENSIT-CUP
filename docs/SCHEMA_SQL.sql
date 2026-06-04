@@ -252,11 +252,11 @@ BEGIN
    NEW.updated_at = NOW();
    RETURN NEW;
 END;
-$$ language 'plpgsql';
+$$ LANGUAGE plpgsql;
 
 -- Triggers
-CREATE TRIGGER update_profiles_modtime BEFORE UPDATE ON profiles FOR EACH ROW EXECUTE PROCEDURE update_modified_column();
-CREATE TRIGGER update_équipes_modtime BEFORE UPDATE ON "équipes" FOR EACH ROW EXECUTE PROCEDURE update_modified_column();
-CREATE TRIGGER update_joueurs_modtime BEFORE UPDATE ON joueurs FOR EACH ROW EXECUTE PROCEDURE update_modified_column();
-CREATE TRIGGER update_matchs_modtime BEFORE UPDATE ON matchs FOR EACH ROW EXECUTE PROCEDURE update_modified_column();
-CREATE TRIGGER update_formations_modtime BEFORE UPDATE ON formations FOR EACH ROW EXECUTE PROCEDURE update_modified_column();
+CREATE TRIGGER update_profiles_modtime BEFORE UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION update_modified_column();
+CREATE TRIGGER update_équipes_modtime BEFORE UPDATE ON "équipes" FOR EACH ROW EXECUTE FUNCTION update_modified_column();
+CREATE TRIGGER update_joueurs_modtime BEFORE UPDATE ON joueurs FOR EACH ROW EXECUTE FUNCTION update_modified_column();
+CREATE TRIGGER update_matchs_modtime BEFORE UPDATE ON matchs FOR EACH ROW EXECUTE FUNCTION update_modified_column();
+CREATE TRIGGER update_formations_modtime BEFORE UPDATE ON formations FOR EACH ROW EXECUTE FUNCTION update_modified_column();

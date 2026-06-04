@@ -314,6 +314,14 @@ html, body, #root {
   animation: shimmer 3s linear infinite;
 }
 
+/* Static app title (no animation) */
+.app-title {
+  background: linear-gradient(135deg, #00e676 0%, #7c3aed 50%, #00e676 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
 /* 3D Card hover */
 .card-3d {
   transition: transform 0.3s ease, box-shadow 0.3s ease;
@@ -377,6 +385,13 @@ html, body, #root {
     radial-gradient(at 80% 80%, rgba(124,58,237,0.07) 0%, transparent 50%),
     radial-gradient(at 50% 50%, rgba(0,0,0,0) 0%, var(--color-bg) 100%);
   background-attachment: fixed;
+}
+
+/* Subtle repeating football icons background */
+.football-bg {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'><circle cx='32' cy='32' r='30' fill='none' stroke='%2300e676' stroke-opacity='0.06' stroke-width='2'/><path d='M20 28 L28 24 L36 28 L32 36 L24 36 Z' fill='%2300e676' fill-opacity='0.06'/></svg>"), radial-gradient(at 20% 20%, rgba(0,230,118,0.03) 0%, transparent 50%), radial-gradient(at 80% 80%, rgba(124,58,237,0.03) 0%, transparent 50%);
+  background-repeat: repeat;
+  background-size: 120px 120px, auto, auto;
 }
 
 /* =====================
