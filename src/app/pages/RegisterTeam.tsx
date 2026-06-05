@@ -72,6 +72,11 @@ export const RegisterTeam = () => {
     e.preventDefault();
     setError('');
     
+    if (!navigator.onLine) {
+      setError("Impossible de créer l'équipe : vérifiez votre connexion internet.");
+      return;
+    }
+
     // Validation
     if (!teamName.trim()) {
       setError("Le nom de l'équipe est requis.");
@@ -139,7 +144,14 @@ export const RegisterTeam = () => {
 
       setIsSubmitted(true);
     } catch (err: any) {
-      setError(err.message || "Une erreur est survenue lors de l'inscription.");
+      const message = err?.message || '';
+      if (message.includes('Failed to fetch')) {
+        setError(
+          "Impossible de joindre Supabase. Vérifiez les variables d'environnement VITE_SUPABASE_URL et VITE_SUPABASE_ANON_KEY, puis actualisez la page."
+        );
+      } else {
+        setError(message || "Une erreur est survenue lors de l'inscription.");
+      }
     } finally {
       setIsSubmitting(false);
     }

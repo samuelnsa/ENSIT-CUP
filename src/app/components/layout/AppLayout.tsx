@@ -1,13 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Outlet, NavLink, Navigate, useLocation } from 'react-router-dom';
 import {
   Trophy, Users, Calendar, LayoutDashboard, Settings,
   Trello, UserPlus, BarChart3, GitFork, LogOut, Shield,
-  Loader2, Activity
+  Loader2, Activity, Menu, X
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 export const AppLayout = () => {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { user, logout, isAuthenticated, loading } = useAuth();
   const location = useLocation();
 
@@ -21,8 +22,14 @@ export const AppLayout = () => {
 
   return (
     <div className="flex h-screen bg-mesh overflow-hidden">
+      {/* Mobile backdrop */}
+      <div
+        className={`fixed inset-0 bg-black/40 z-30 transition-opacity duration-200 md:hidden ${isSidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+        onClick={() => setIsSidebarOpen(false)}
+      />
+
       {/* Sidebar */}
-      <aside className="sidebar w-64 flex-shrink-0">
+      <aside className={`sidebar fixed inset-y-0 left-0 z-40 w-64 transform bg-mesh transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:static md:translate-x-0 md:block`}>
         {/* Logo */}
         <div className="sidebar-logo">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center hero-gradient-green">
@@ -84,10 +91,37 @@ export const AppLayout = () => {
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-y-auto">
-        <Outlet />
-      </main>
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <header className="md:hidden flex items-center justify-between gap-3 border-b border-panel bg-panel-dark px-4 py-3">
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="p-2 rounded-xl bg-panel-overlay text-muted transition hover:bg-white/10"
+            aria-label="Ouvrir le menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center hero-gradient-green">
+              <Trophy className="w-5 h-5 text-black" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-primary">ENSIT Cup</p>
+              <p className="text-xs text-muted">Tournoi Interclasses</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsSidebarOpen(false)}
+            className="p-2 rounded-xl bg-panel-overlay text-muted transition hover:bg-white/10"
+            aria-label="Fermer le menu"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </header>
+
+        <main className="flex-1 overflow-y-auto">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 };

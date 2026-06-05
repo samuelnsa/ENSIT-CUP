@@ -1,4 +1,4 @@
-import { clientSupabase } from '../config/supabase';
+import { clientSupabase, ensureSupabaseConfig } from '../config/supabase';
 import { écussonsDisponibles } from '../donnees/écussons';
 
 export interface Équipe {
@@ -25,13 +25,15 @@ export interface FormulaireCréationÉquipe {
 }
 
 // Récupérer toutes les équipes
-export async function obtenirToutesLesÉquipes(): Promise<Équipe[]> {
+export async function obtenirToutesLesÉquipes(includeNonActives = false): Promise<Équipe[]> {
+  ensureSupabaseConfig();
   try {
-    const { data, error } = await clientSupabase
-      .from('équipes')
-      .select('*')
-      .eq('statut', 'actif');
+    let query = clientSupabase.from('équipes').select('*');
+    if (!includeNonActives) {
+      query = query.eq('statut', 'actif');
+    }
 
+    const { data, error } = await query;
     if (error) throw error;
     return data || [];
   } catch (erreur) {
@@ -42,6 +44,7 @@ export async function obtenirToutesLesÉquipes(): Promise<Équipe[]> {
 
 // Récupérer une équipe par ID
 export async function obtenirÉquipeParId(idÉquipe: string): Promise<Équipe | null> {
+  ensureSupabaseConfig();
   try {
     const { data, error } = await clientSupabase
       .from('équipes')
@@ -59,6 +62,7 @@ export async function obtenirÉquipeParId(idÉquipe: string): Promise<Équipe | 
 
 // Créer une nouvelle équipe
 export async function créerÉquipe(formulaire: FormulaireCréationÉquipe): Promise<Équipe | null> {
+  ensureSupabaseConfig();
   try {
     // Résoudre le logo à partir de l'écusson sélectionné
     const écusson = écussonsDisponibles.find(e => e.id === formulaire.écusson_id);
