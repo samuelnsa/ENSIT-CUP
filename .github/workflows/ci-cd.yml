@@ -20,16 +20,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: yarn
-
-      - name: Enable Corepack
-        run: corepack enable
+          cache: 'npm'
 
       - name: Install dependencies
-        run: corepack yarn install
+        run: npm ci
 
       - name: Build production bundle
-        run: corepack yarn build
+        run: npm run build
 
   typecheck:
     name: Type-check
@@ -43,13 +40,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: yarn
-
-      - name: Enable Corepack
-        run: corepack enable
+          cache: 'npm'
 
       - name: Install dependencies
-        run: corepack yarn install
+        run: npm ci
 
       - name: Run TypeScript type check
         run: npx tsc --noEmit
