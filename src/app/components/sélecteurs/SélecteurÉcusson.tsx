@@ -16,35 +16,60 @@ export const SélecteurÉcusson: React.FC<SélecteurÉcussonProps> = ({
       <label className="block text-xs font-semibold uppercase tracking-wider text-muted">
         Écusson de l'équipe
       </label>
-      
-      <div className="grid grid-cols-5 md:grid-cols-6 lg:grid-cols-10 gap-3 p-4 rounded-xl bg-panel-soft border-panel">
-        {écussonsDisponibles.map((écusson) => (
-          <button
-            type="button"
-            key={écusson.id}
-            onClick={() => onÉcussonChange(écusson.id)}
-            className={`relative group rounded-lg overflow-hidden transition-all duration-200 p-2 flex items-center justify-center ${écussonSélectionné === écusson.id ? 'selected-écusson' : 'panel-ultra-soft border-panel'}`}
-            title={écusson.nom}
-          >
-            <ImageWithFallback
-              src={écusson.url}
-              alt={écusson.nom}
-              className="w-10 h-10 object-contain rounded"
-            />
-            {écussonSélectionné === écusson.id && (
-              <div className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full dot-accent" />
-            )}
-            <div className="absolute bottom-0 left-0 right-0 bg-black/80 text-white text-[9px] font-semibold py-0.5 text-center opacity-0 group-hover:opacity-100 transition-all">
-              {écusson.nom}
-            </div>
-          </button>
-        ))}
+
+      {/* Grille 2 colonnes sur mobile, 5 sur tablette, 5 sur desktop */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 p-3 rounded-xl bg-panel-soft border-panel">
+        {écussonsDisponibles.map((écusson) => {
+          const isSelected = écussonSélectionné === écusson.id;
+          return (
+            <button
+              type="button"
+              key={écusson.id}
+              onClick={() => onÉcussonChange(écusson.id)}
+              className={`relative group rounded-xl overflow-hidden transition-all duration-200 p-3 flex flex-col items-center justify-center gap-2 min-h-[100px] ${
+                isSelected
+                  ? 'ring-2 ring-emerald-500 bg-emerald-500/10 selected-écusson'
+                  : 'hover:bg-white/5 panel-ultra-soft border-panel'
+              }`}
+              title={écusson.nom}
+              aria-label={écusson.nom}
+              aria-pressed={isSelected}
+            >
+              {/* Badge agrandi — 20x20 sur mobile (80px), 18x18 sur desktop */}
+              <ImageWithFallback
+                src={écusson.url}
+                alt={écusson.nom}
+                className="w-20 h-20 sm:w-16 sm:h-16 object-contain rounded-xl drop-shadow-md"
+              />
+              {/* Nom du club toujours visible sur mobile */}
+              <span className="text-[11px] sm:text-[10px] font-semibold text-center leading-tight text-white/80 line-clamp-2 w-full">
+                {écusson.nom}
+              </span>
+              {isSelected && (
+                <div className="absolute top-1.5 right-1.5 w-3 h-3 rounded-full dot-accent shadow-sm" />
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      <div className="text-xs p-3 rounded-lg flex items-center gap-2 bg-panel-success border-panel text-muted">
-        <span>ℹ️</span>
-        <span>Vous pouvez modifier l'écusson plus tard dans les paramètres de l'équipe.</span>
-      </div>
+      {/* Aperçu de l'écusson sélectionné */}
+      {écussonSélectionné && (() => {
+        const selected = écussonsDisponibles.find(e => e.id === écussonSélectionné);
+        return selected ? (
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-panel-success border-panel">
+            <ImageWithFallback
+              src={selected.url}
+              alt={selected.nom}
+              className="w-12 h-12 object-contain rounded-lg"
+            />
+            <div>
+              <p className="text-xs font-semibold text-primary">Sélectionné : {selected.nom}</p>
+              <p className="text-[10px] text-muted mt-0.5">Modifiable ultérieurement.</p>
+            </div>
+          </div>
+        ) : null;
+      })()}
     </div>
   );
 };

@@ -1,8 +1,8 @@
-import React, { useMemo, useState, useEffect } from 'react';
+﻿import React, { useMemo, useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { Settings, Play, Database, CheckCircle2, Users, Calendar, Eye, Trash2, Copy } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { useÉquipes, useMatchs, useTousLesJoueurs } from '../hooks/useSupabase';
+import { useAdminÉquipes, useMatchs, useTousLesJoueurs, invalidateCacheÉquipes } from '../hooks/useSupabase';
 import { créerÉquipe, désactiverÉquipe, supprimerÉquipe, mettreÀJourÉquipe, Équipe } from '../services/équipesService';
 import { mettreÀJourMatch, créerMatch, créerMatchs } from '../services/matchsService';
 import { getUserProfileFromSession, signUpWithUsername } from '../services/authService';
@@ -75,9 +75,64 @@ const FORMATION_PRESETS: Record<5 | 7 | 9 | 11, Record<string, { topClass: strin
 export const Admin = () => {
   const { user, loginAsAdmin } = useAuth();
   
-  const { équipes, chargement: chargementÉquipes, refetch: refetchÉquipes } = useÉquipes();
+  const { équipes, chargement: chargementÉquipes, refetch: refetchÉquipes } = useAdminÉquipes();
   const { matchs, chargement: chargementMatchs, refetch: refetchMatchs } = useMatchs();
   const { joueurs, chargement: chargementJoueurs } = useTousLesJoueurs();
+
+  // Vérifier et maintenir la session Supabase active
+  const [supabaseSessionActive, setSupabaseSessionActive] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const ADMIN_EMAIL = 'admin_tournoi@tournoi-foot.com';
+    const ADMIN_PASSWORD = 'AdminPassword2026!';
+
+    const checkAndRefreshSession = async () => {
+      const { data } = await clientSupabase.auth.getSession();
+      if (data.session?.user) {
+        setSupabaseSessionActive(true);
+        return;
+      }
+      // Session absente — ré-authentifier silencieusement en arrière-plan
+      try {
+        const { data: signInData, error } = await clientSupabase.auth.signInWithPassword({
+          email: ADMIN_EMAIL,
+          password: ADMIN_PASSWORD,
+        });
+        const ok = !error && !!signInData.session;
+        setSupabaseSessionActive(ok);
+      } catch {
+        setSupabaseSessionActive(false);
+      }
+    };
+
+    checkAndRefreshSession();
+    const interval = setInterval(checkAndRefreshSession, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  /** Ré-authentifie silencieusement l'admin si la session a expiré */
+  const ensureAdminSession = async (): Promise<boolean> => {
+    const { data } = await clientSupabase.auth.getSession();
+    if (data.session?.user) return true;
+    // Tentative de ré-authentification automatique
+    try {
+      const { data: signInData, error } = await clientSupabase.auth.signInWithPassword({
+        email: 'admin_tournoi@tournoi-foot.com',
+        password: 'AdminPassword2026!'
+      });
+      if (error || !signInData.session) {
+        alert('Session expirée. Veuillez vous reconnecter via le formulaire admin.');
+        setIsAdminAuthenticated(false);
+        return false;
+      }
+      setSupabaseSessionActive(true);
+      return true;
+    } catch {
+      alert('Session expirée. Veuillez vous reconnecter.');
+      setIsAdminAuthenticated(false);
+      return false;
+    }
+  };
 
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = searchParams.get('tab') || 'overview';
@@ -104,6 +159,8 @@ export const Admin = () => {
   const [matchData, setMatchData] = useState<Record<string, AdminMatchData>>({});
   const [selectedTeamForCompo, setSelectedTeamForCompo] = useState<string | null>(null);
   const [teamForm, setTeamForm] = useState({ nom: '', classe: '', écusson_id: '', description: '', code_acces: '', capitaine_nom: '' });
+  const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
+  const [teamEditForm, setTeamEditForm] = useState({ nom: '', classe: '', description: '', code_acces: '', capitaine_nom: '' });
   const [manualMatchForm, setManualMatchForm] = useState<{
     équipe_a_id: string;
     équipe_b_id: string;
@@ -150,29 +207,75 @@ export const Admin = () => {
 
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminCode === 'ensit2026') {
-      try {
-        setLoginError('');
-        const { data, error } = await clientSupabase.auth.signInWithPassword({
-          email: 'admin_tournoi@tournoi-foot.com',
-          password: 'AdminPassword2026!'
-        });
-        if (error) throw error;
-
-        const profile = await getUserProfileFromSession(data.session);
-        if (!profile || profile.role !== 'admin') {
-          throw new Error('Le compte administrateur n’est pas autorisé. Vérifiez la configuration Supabase.');
-        }
-
-        localStorage.setItem('admin_authenticated', 'true');
-        loginAsAdmin();
-        setIsAdminAuthenticated(true);
-      } catch (err: any) {
-        console.error("Admin signin error:", err);
-        setLoginError(err.message || 'Erreur lors de la connexion à la base de données.');
-      }
-    } else {
+    if (adminCode !== 'ensit2026') {
       setLoginError('Code administrateur incorrect.');
+      return;
+    }
+    setLoginError('');
+
+    // 1. Essayer de se connecter avec le compte admin existant
+    const ADMIN_EMAIL = 'admin_tournoi@tournoi-foot.com';
+    const ADMIN_PASSWORD = 'AdminPassword2026!';
+
+    try {
+      let session: any = null;
+
+      const { data: signInData, error: signInError } = await clientSupabase.auth.signInWithPassword({
+        email: ADMIN_EMAIL,
+        password: ADMIN_PASSWORD,
+      });
+
+      if (signInError) {
+        // Compte inexistant — le créer automatiquement
+        if (signInError.message.toLowerCase().includes('invalid') || signInError.message.toLowerCase().includes('not found') || signInError.status === 400) {
+          const { data: signUpData, error: signUpError } = await clientSupabase.auth.signUp({
+            email: ADMIN_EMAIL,
+            password: ADMIN_PASSWORD,
+            options: { data: { role: 'admin', full_name: 'Administrateur', username: 'admin_tournoi' } },
+          });
+          if (signUpError) throw signUpError;
+          session = signUpData.session;
+          // Insérer le profil admin
+          if (signUpData.user?.id) {
+            await clientSupabase.from('profiles').upsert({
+              id: signUpData.user.id,
+              username: 'admin_tournoi',
+              full_name: 'Administrateur',
+              role: 'admin',
+            }, { onConflict: 'id' });
+          }
+        } else {
+          throw signInError;
+        }
+      } else {
+        session = signInData.session;
+        // S'assurer que le profil existe
+        if (signInData.user?.id) {
+          await clientSupabase.from('profiles').upsert({
+            id: signInData.user.id,
+            username: 'admin_tournoi',
+            full_name: 'Administrateur',
+            role: 'admin',
+          }, { onConflict: 'id' });
+        }
+      }
+
+      const profile = session ? await getUserProfileFromSession(session) : null;
+      const adminProfile = profile || {
+        id: signInData?.user?.id || 'admin_local',
+        username: 'admin_tournoi',
+        email: ADMIN_EMAIL,
+        full_name: 'Administrateur',
+        role: 'admin' as const,
+      };
+
+      localStorage.setItem('admin_authenticated', 'true');
+      loginAsAdmin(adminProfile);
+      setIsAdminAuthenticated(true);
+      setSupabaseSessionActive(!!session);
+    } catch (err: any) {
+      console.error('Admin signin error:', err);
+      setLoginError(err.message || 'Erreur lors de la connexion à la base de données.');
     }
   };
 
@@ -241,17 +344,19 @@ export const Admin = () => {
     if (confirm("Attention : cela supprimera tous les matchs ainsi que tous les buts et passes enregistrés. Voulez-vous continuer ?")) {
       setIsDeleting(true);
       try {
-        const { error: errorButs } = await clientSupabase.from('buts_matchs').delete().neq('id', '0');
+        const { error: errorButs } = await clientSupabase.from('buts_matchs').delete();
         if (errorButs) console.warn("Erreur suppression buts:", errorButs);
-        const { error: errorPasses } = await clientSupabase.from('passes_matchs').delete().neq('id', '0');
+
+        const { error: errorPasses } = await clientSupabase.from('passes_matchs').delete();
         if (errorPasses) console.warn("Erreur suppression passes:", errorPasses);
-        const { error: errorMatchs } = await clientSupabase.from('matchs').delete().neq('id', '0');
+
+        const { error: errorMatchs } = await clientSupabase.from('matchs').delete();
         if (errorMatchs) throw errorMatchs;
-        
+
         await refetchMatchs();
       } catch (err) {
         console.error("Erreur lors de la réinitialisation :", err);
-        alert("Une erreur est survenue lors de la réinitialisation.");
+        alert("Une erreur est survenue lors de la réinitialisation. Vérifiez la console pour plus de détails.");
       } finally {
         setIsDeleting(false);
       }
@@ -277,6 +382,7 @@ export const Admin = () => {
       return;
     }
     
+    if (!(await ensureAdminSession())) return;
     // Auto-generate access code: e.g. "ING1-LIONS-4829"
     const cleanNom = normalizedNom.replace(/\s+/g, '').replace(/[^A-Z0-9]/g, '').substring(0, 6);
     const generatedCode = `${teamForm.classe.toUpperCase()}-${cleanNom}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -309,7 +415,8 @@ export const Admin = () => {
       }
       
       setTeamForm({ nom: '', classe: '', écusson_id: '', description: '', code_acces: '', capitaine_nom: '' });
-      refetchÉquipes();
+      invalidateCacheÉquipes();
+      await refetchÉquipes();
       alert(`Équipe ${equipe.nom} créée avec succès !`);
     } catch (err: any) {
       console.error('Erreur création équipe :', err);
@@ -317,15 +424,108 @@ export const Admin = () => {
     }
   };
 
+  const handleStartEditTeam = (team: Équipe) => {
+    setEditingTeamId(team.id);
+    setTeamEditForm({
+      nom: team.nom || '',
+      classe: team.classe || '',
+      description: team.description || '',
+      code_acces: team.code_acces || '',
+      capitaine_nom: ''
+    });
+  };
+
+  const handleTeamEditFormChange = (field: string, value: string) => setTeamEditForm(prev => ({
+    ...prev,
+    [field]: field === 'nom' || field === 'capitaine_nom' ? value.toUpperCase() : value
+  }));
+
+  const handleCancelEditTeam = () => {
+    setEditingTeamId(null);
+  };
+
+  const handleSaveTeamEdits = async (team: Équipe) => {
+    const updatedFields: Partial<Équipe> = {};
+    const normalizedNom = teamEditForm.nom.trim().toUpperCase();
+    const normalizedClasse = teamEditForm.classe.trim();
+    const normalizedDescription = teamEditForm.description.trim();
+    const normalizedCodeAcces = teamEditForm.code_acces.trim();
+    const captainName = teamEditForm.capitaine_nom.trim().toUpperCase();
+
+    if (!normalizedNom || !normalizedClasse) {
+      alert('Le nom et la classe sont obligatoires.');
+      return;
+    }
+
+    if (normalizedNom !== team.nom) {
+      updatedFields.nom = normalizedNom;
+    }
+    if (normalizedClasse !== team.classe) {
+      updatedFields.classe = normalizedClasse;
+    }
+    if (normalizedDescription !== team.description) {
+      updatedFields.description = normalizedDescription;
+    }
+    if (normalizedCodeAcces && normalizedCodeAcces !== team.code_acces) {
+      updatedFields.code_acces = normalizedCodeAcces;
+    }
+
+    if (!(await ensureAdminSession())) return;
+    try {
+      if (Object.keys(updatedFields).length > 0) {
+        await mettreÀJourÉquipe(team.id, updatedFields);
+      }
+
+      if (!team.capitaine_id && captainName) {
+        const accessCodeToUse = normalizedCodeAcces || team.code_acces || `TEAM-${Math.floor(1000 + Math.random() * 9000)}`;
+        const password = `${accessCodeToUse}_ENSITCup_Secure`;
+        const captainProfile = await signUpWithUsername(captainName, password, 'captain', normalizedClasse || team.classe, team.id);
+        if (captainProfile?.id) {
+          await mettreÀJourÉquipe(team.id, { capitaine_id: captainProfile.id });
+        }
+      }
+
+      setEditingTeamId(null);
+      invalidateCacheÉquipes();
+      await refetchÉquipes();
+      alert('Les informations de l’équipe ont été mises à jour.');
+    } catch (err: any) {
+      console.error('Erreur mise à jour équipe :', err);
+      alert('Impossible de mettre à jour l’équipe : ' + (err?.message || err));
+    }
+  };
+
   const handleDisqualifyTeam = async (teamId: string) => {
-    await désactiverÉquipe(teamId);
-    refetchÉquipes();
+    if (!(await ensureAdminSession())) return;
+    try {
+      const result = await désactiverÉquipe(teamId);
+      if (!result) {
+        alert('La désactivation de l’équipe a échoué. Vérifiez la console pour plus de détails.');
+        return;
+      }
+      invalidateCacheÉquipes();
+      await refetchÉquipes();
+    } catch (err) {
+      console.error('Erreur désactivation équipe :', err);
+      alert('Impossible de désactiver l’équipe. Vérifiez la console pour plus de détails.');
+    }
   };
 
   const handleDeleteTeam = async (teamId: string) => {
+    if (!(await ensureAdminSession())) return;
     if (confirm('Voulez-vous vraiment supprimer cette équipe ?')) {
-      await supprimerÉquipe(teamId);
-      refetchÉquipes();
+      try {
+        const deleted = await supprimerÉquipe(teamId);
+        if (!deleted) {
+          alert('La suppression de l’équipe a échoué. Vérifiez la console pour plus de détails.');
+          return;
+        }
+        invalidateCacheÉquipes();
+        await refetchÉquipes();
+      } catch (err) {
+        console.error('Erreur suppression équipe :', err);
+        alert('Impossible de supprimer l’équipe. Vérifiez la console pour plus de détails.');
+      }
     }
   };
 
@@ -390,7 +590,8 @@ export const Admin = () => {
   const inscribedProgressClass = progressWidthClasses[Math.min(Math.max(Math.round((équipes.length / 10) * 10), 0), 10)];
 
   const renderTeamActionButtons = (team: Équipe) => (
-    <div className="flex gap-2 mt-2">
+    <div className="flex flex-wrap gap-2 mt-2">
+      <button onClick={() => handleStartEditTeam(team)} className="px-3 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 rounded-lg font-medium text-sm transition-colors">Modifier</button>
       <button onClick={() => handleDisqualifyTeam(team.id)} className="px-3 py-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/20 rounded-lg font-medium text-sm transition-colors">Désactiver</button>
       <button onClick={() => handleDeleteTeam(team.id)} className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg font-medium text-sm transition-colors flex items-center gap-1"><Trash2 className="w-4 h-4" /> Supprimer</button>
     </div>
@@ -398,6 +599,14 @@ export const Admin = () => {
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8 animate-slide-up">
+      {/* Bannière d'alerte session Supabase */}
+      {supabaseSessionActive === false && (
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+          <span>⚠️</span>
+          <span>Session Supabase inactive — les modifications ne seront pas sauvegardées. Déconnectez-vous et reconnectez-vous.</span>
+          <button onClick={() => { setIsAdminAuthenticated(false); }} className="ml-auto text-xs underline">Se reconnecter</button>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center gap-3 mb-2">
         <div className="w-1 h-8 rounded-full stripe-purple" />
@@ -504,7 +713,7 @@ export const Admin = () => {
                     <div key={team.id} className="flex flex-col p-4 rounded-xl bg-panel-soft">
                       <div className="flex items-center justify-between gap-4 mb-3">
                         <div className="flex items-center gap-4">
-                          <ImageWithFallback src={team.logo} alt={team.nom} className="w-10 h-10 rounded-full object-cover" />
+                          <ImageWithFallback src={team.logo} alt={team.nom} className="w-14 h-14 rounded-2xl object-contain" />
                           <div>
                             <div className="font-semibold text-primary">{team.nom}</div>
                             <div className="text-xs text-muted">Classe {team.classe} • {teamPlayers.length} joueurs</div>
@@ -544,6 +753,44 @@ export const Admin = () => {
                         )}
                       </div>
                       {renderTeamActionButtons(team)}
+                      {editingTeamId === team.id && (
+                        <div className="mt-4 p-4 rounded-2xl border border-slate-700 bg-panel-dark">
+                          <h3 className="text-sm font-semibold text-primary mb-4">Modifier l'équipe</h3>
+                          <div className="grid gap-4">
+                            <div>
+                              <label className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Nom de l'équipe</label>
+                              <input type="text" value={teamEditForm.nom} onChange={e => handleTeamEditFormChange('nom', e.target.value)} className="input-field pl-3" placeholder="EX: LIONS" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Classe</label>
+                              <input type="text" value={teamEditForm.classe} onChange={e => handleTeamEditFormChange('classe', e.target.value)} className="input-field pl-3" placeholder="ING2" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Description</label>
+                              <textarea value={teamEditForm.description} onChange={e => handleTeamEditFormChange('description', e.target.value)} className="input-field pl-3 min-h-[100px]" placeholder="Description de l'équipe..." />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Code d'accès</label>
+                              <input type="text" value={teamEditForm.code_acces} onChange={e => handleTeamEditFormChange('code_acces', e.target.value)} className="input-field pl-3" placeholder="Ex: ING2-LIONS-4829" />
+                            </div>
+                            {!team.capitaine_id ? (
+                              <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Nom du capitaine</label>
+                                <input type="text" value={teamEditForm.capitaine_nom} onChange={e => handleTeamEditFormChange('capitaine_nom', e.target.value)} className="input-field pl-3" placeholder="Nom du capitaine" />
+                                <p className="text-[11px] text-muted mt-1">Saisissez le nom du capitaine si l'équipe a été créée sans capitaine.</p>
+                              </div>
+                            ) : (
+                              <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-3 text-sm text-slate-300">
+                                Capitaine déjà attribué. Vous pouvez modifier les informations de l'équipe ici.
+                              </div>
+                            )}
+                            <div className="flex flex-wrap gap-3">
+                              <button onClick={() => handleSaveTeamEdits(team)} className="btn-primary py-2 px-4">Enregistrer</button>
+                              <button onClick={handleCancelEditTeam} className="btn-secondary py-2 px-4">Annuler</button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -571,7 +818,7 @@ export const Admin = () => {
                   <input type="text" value={teamForm.capitaine_nom} onChange={e => handleTeamFormChange('capitaine_nom', e.target.value)} className="input-field pl-3" placeholder="Nom du capitaine" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Code d'accès secret (Généré)</label>
+                  <label className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Code d'accès secret </label>
                   <div className="input-field font-mono flex items-center bg-slate-800/40 text-slate-400 select-none cursor-not-allowed text-xs pl-3 h-10 border-dashed">
                     {teamForm.nom && teamForm.classe 
                       ? `${teamForm.classe}-${teamForm.nom.trim().replace(/\s+/g, '').replace(/[^A-Z0-9]/g, '').substring(0, 5)}-XXXX`

@@ -16,7 +16,7 @@ interface AuthContextType {
   signIn: (username: string, password: string) => Promise<User>;
   registerCaptain: (username: string, teamId: string, teamCode: string) => Promise<User>;
   logout: () => Promise<void>;
-  loginAsAdmin: () => void;
+  loginAsAdmin: (profile?: User) => void;
   isAuthenticated: boolean;
   loading: boolean;
 }
@@ -87,9 +87,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return profile;
   };
 
-  const loginAsAdmin = () => {
+  const loginAsAdmin = (profile?: User) => {
     localStorage.setItem('admin_authenticated', 'true');
-    setUser({
+    // Si un profil Supabase réel est fourni, l'utiliser — sinon fallback local
+    setUser(profile || {
       id: 'admin_local',
       username: 'admin_tournoi',
       email: 'admin_tournoi@tournoi-foot.com',

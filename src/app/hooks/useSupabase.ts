@@ -10,6 +10,18 @@ import {
   Match,
 } from '../services/matchsService';
 
+// Clé de cache partagée — à invalider après toute mutation admin
+export const CACHE_KEY_ÉQUIPES = 'ensit_cup_equipes_cache';
+
+/** Vide le cache localStorage des équipes pour forcer un rechargement depuis Supabase */
+export function invalidateCacheÉquipes() {
+  try {
+    localStorage.removeItem(CACHE_KEY_ÉQUIPES);
+  } catch (_) {
+    // localStorage peut être indisponible en navigation privée
+  }
+}
+
 interface ÉtatÉquipes {
   équipes: Équipe[];
   chargement: boolean;
@@ -21,14 +33,16 @@ export const useÉquipes = (): ÉtatÉquipes => {
   const [équipes, setÉquipes] = useState<Équipe[]>([]);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
-  const cacheKey = 'ensit_cup_equipes_cache';
 
   const chargerÉquipes = async () => {
     try {
       setChargement(true);
       const données = await obtenirToutesLesÉquipes();
       setÉquipes(données);
-      localStorage.setItem(cacheKey, JSON.stringify(données));
+      // Mettre à jour le cache avec les données fraîches
+      try {
+        localStorage.setItem(CACHE_KEY_ÉQUIPES, JSON.stringify(données));
+      } catch (_) {}
       setErreur(null);
     } catch (err) {
       setErreur('Erreur lors du chargement des équipes');
@@ -39,18 +53,50 @@ export const useÉquipes = (): ÉtatÉquipes => {
   };
 
   useEffect(() => {
-    const cached = localStorage.getItem(cacheKey);
-    if (cached) {
-      try {
+    // Afficher immédiatement depuis le cache si disponible
+    try {
+      const cached = localStorage.getItem(CACHE_KEY_ÉQUIPES);
+      if (cached) {
         const parsed = JSON.parse(cached) as Équipe[];
         if (Array.isArray(parsed) && parsed.length > 0) {
           setÉquipes(parsed);
           setErreur(null);
         }
-      } catch (err) {
-        console.warn('Cache équipes invalide :', err);
       }
+    } catch (err) {
+      console.warn('Cache équipes invalide :', err);
     }
+    // Toujours rafraîchir depuis Supabase au montage
+    chargerÉquipes();
+  }, []);
+
+  return { équipes, chargement, erreur, refetch: chargerÉquipes };
+};
+
+export const useAdminÉquipes = (): ÉtatÉquipes => {
+  const [équipes, setÉquipes] = useState<Équipe[]>([]);
+  const [chargement, setChargement] = useState(true);
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  const chargerÉquipes = async () => {
+    try {
+      setChargement(true);
+      const données = await obtenirToutesLesÉquipes(true);
+      setÉquipes(données);
+      // Invalider le cache public pour que les autres vues reflètent les changements admin
+      invalidateCacheÉquipes();
+      setErreur(null);
+    } catch (err) {
+      setErreur('Erreur lors du chargement des équipes admin');
+      console.error(err);
+    } finally {
+      setChargement(false);
+    }
+  };
+
+  useEffect(() => {
+    // Invalider le cache au montage de l'admin pour forcer des données fraîches
+    invalidateCacheÉquipes();
     chargerÉquipes();
   }, []);
 

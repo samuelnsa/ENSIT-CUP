@@ -42,10 +42,15 @@ export const Teams = () => {
               onClick={() => navigate(`/teams/${team.id}`)}
               className="glass card-3d overflow-hidden cursor-pointer flex flex-col"
             >
-              <div className="h-32 w-full relative bg-panel-lighter">
-                <ImageWithFallback src={team.logo} alt={team.nom} className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
-                <div className="absolute bottom-3 left-3 font-display font-bold text-lg text-primary">
+              {/* Zone écusson : fond sombre + logo centré avec taille correcte */}
+              <div className="h-40 w-full relative bg-panel-lighter flex items-center justify-center">
+                <ImageWithFallback
+                  src={team.logo}
+                  alt={team.nom}
+                  className="w-24 h-24 object-contain drop-shadow-lg"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent pointer-events-none" />
+                <div className="absolute bottom-3 left-3 font-display font-bold text-lg text-primary drop-shadow">
                   {team.nom}
                 </div>
               </div>

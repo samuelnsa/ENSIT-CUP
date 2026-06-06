@@ -29,25 +29,29 @@ export const Dashboard = () => {
 
   const pointsByTeam = useMemo(() => {
     const totals = new Map<string, number>();
-    matchs.forEach((match) => {
-      if (!match.équipe_a_id || !match.équipe_b_id) return;
-      const scoreA = Number(match.score_a ?? 0);
-      const scoreB = Number(match.score_b ?? 0);
-      if (scoreA > scoreB) {
-        totals.set(match.équipe_a_id, (totals.get(match.équipe_a_id) ?? 0) + 3);
-      } else if (scoreA < scoreB) {
-        totals.set(match.équipe_b_id, (totals.get(match.équipe_b_id) ?? 0) + 3);
-      } else {
-        totals.set(match.équipe_a_id, (totals.get(match.équipe_a_id) ?? 0) + 1);
-        totals.set(match.équipe_b_id, (totals.get(match.équipe_b_id) ?? 0) + 1);
-      }
-    });
+    matchs
+      .filter(match => match.statut === 'terminé' && match.score_a !== null && match.score_b !== null)
+      .forEach((match) => {
+        if (!match.équipe_a_id || !match.équipe_b_id) return;
+        const scoreA = Number(match.score_a);
+        const scoreB = Number(match.score_b);
+
+        if (scoreA > scoreB) {
+          totals.set(match.équipe_a_id, (totals.get(match.équipe_a_id) ?? 0) + 3);
+        } else if (scoreA < scoreB) {
+          totals.set(match.équipe_b_id, (totals.get(match.équipe_b_id) ?? 0) + 3);
+        } else {
+          totals.set(match.équipe_a_id, (totals.get(match.équipe_a_id) ?? 0) + 1);
+          totals.set(match.équipe_b_id, (totals.get(match.équipe_b_id) ?? 0) + 1);
+        }
+      });
     return totals;
   }, [matchs]);
 
   const topThree = useMemo(
     () =>
       équipes
+        .filter(team => team.statut === 'actif')
         .map((team) => ({ teamId: team.id, points: pointsByTeam.get(team.id) ?? 0 }))
         .sort((a, b) => b.points - a.points)
         .slice(0, 3),
@@ -194,7 +198,7 @@ export const Dashboard = () => {
                     className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all group team-row bg-panel-lighter border-panel"
                   >
                     <span className="text-xl w-8 text-center flex-shrink-0">{medals[index]}</span>
-                    <ImageWithFallback src={team?.logo || ''} alt={team?.nom || ''} className="w-9 h-9 rounded-xl object-cover flex-shrink-0" />
+                    <ImageWithFallback src={team?.logo || ''} alt={team?.nom || ''} className="w-12 h-12 rounded-2xl object-contain flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold truncate text-primary">{team?.nom || '—'}</p>
                       <p className="text-xs text-muted">{team?.classe}</p>

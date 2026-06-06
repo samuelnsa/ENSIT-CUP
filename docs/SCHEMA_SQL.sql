@@ -167,73 +167,73 @@ ALTER TABLE formations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE classements ENABLE ROW LEVEL SECURITY;
 
 -- 1. Profiles
-CREATE POLICY "Profils lisibles par tous" ON profiles FOR SELECT USING (true);
-CREATE POLICY "Insertion de son propre profil" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
-CREATE POLICY "Mise à jour de son profil" ON profiles FOR UPDATE USING (auth.uid() = id);
+CREATE POLICY IF NOT EXISTS "Profils lisibles par tous" ON profiles FOR SELECT USING (true);
+CREATE POLICY IF NOT EXISTS "Insertion de son propre profil" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
+CREATE POLICY IF NOT EXISTS "Mise à jour de son profil" ON profiles FOR UPDATE USING (auth.uid() = id);
 
 -- 2. Équipes
-CREATE POLICY "Équipes lisibles par tous" ON "équipes" FOR SELECT USING (true);
-CREATE POLICY "Capitaines créent des équipes" ON "équipes" FOR INSERT WITH CHECK (
+CREATE POLICY IF NOT EXISTS "Équipes lisibles par tous" ON "équipes" FOR SELECT USING (true);
+CREATE POLICY IF NOT EXISTS "Capitaines créent des équipes" ON "équipes" FOR INSERT WITH CHECK (
   EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('captain', 'admin'))
 );
-CREATE POLICY "Capitaines mettent à jour leur équipe" ON "équipes" FOR UPDATE USING (
+CREATE POLICY IF NOT EXISTS "Capitaines mettent à jour leur équipe" ON "équipes" FOR UPDATE USING (
   capitaine_id = auth.uid() OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
 );
-CREATE POLICY "Admins suppriment équipes" ON "équipes" FOR DELETE USING (
+CREATE POLICY IF NOT EXISTS "Admins suppriment équipes" ON "équipes" FOR DELETE USING (
   EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
 );
 
 -- 3. Joueurs
-CREATE POLICY "Joueurs lisibles par tous" ON joueurs FOR SELECT USING (true);
-CREATE POLICY "Capitaines gèrent leurs joueurs" ON joueurs FOR ALL USING (
+CREATE POLICY IF NOT EXISTS "Joueurs lisibles par tous" ON joueurs FOR SELECT USING (true);
+CREATE POLICY IF NOT EXISTS "Capitaines gèrent leurs joueurs" ON joueurs FOR ALL USING (
   EXISTS (SELECT 1 FROM "équipes" WHERE id = joueurs."équipe_id" AND capitaine_id = auth.uid()) OR
   EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
 );
 
 -- 4. Matchs
-CREATE POLICY "Matchs lisibles par tous" ON matchs FOR SELECT USING (true);
-CREATE POLICY "Admins créent matchs" ON matchs FOR INSERT WITH CHECK (
+CREATE POLICY IF NOT EXISTS "Matchs lisibles par tous" ON matchs FOR SELECT USING (true);
+CREATE POLICY IF NOT EXISTS "Admins créent matchs" ON matchs FOR INSERT WITH CHECK (
   EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
 );
-CREATE POLICY "Admins modifient matchs" ON matchs FOR UPDATE USING (
+CREATE POLICY IF NOT EXISTS "Admins modifient matchs" ON matchs FOR UPDATE USING (
   EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
 );
-CREATE POLICY "Admins suppriment matchs" ON matchs FOR DELETE USING (
+CREATE POLICY IF NOT EXISTS "Admins suppriment matchs" ON matchs FOR DELETE USING (
   EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
 );
 
 -- 5. Stats (Buts & Passes)
-CREATE POLICY "Buts lisibles par tous" ON buts_matchs FOR SELECT USING (true);
-CREATE POLICY "Admins créent buts" ON buts_matchs FOR INSERT WITH CHECK (
+CREATE POLICY IF NOT EXISTS "Buts lisibles par tous" ON buts_matchs FOR SELECT USING (true);
+CREATE POLICY IF NOT EXISTS "Admins créent buts" ON buts_matchs FOR INSERT WITH CHECK (
   EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
 );
-CREATE POLICY "Admins modifient buts" ON buts_matchs FOR UPDATE USING (
+CREATE POLICY IF NOT EXISTS "Admins modifient buts" ON buts_matchs FOR UPDATE USING (
   EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
 );
-CREATE POLICY "Admins suppriment buts" ON buts_matchs FOR DELETE USING (
+CREATE POLICY IF NOT EXISTS "Admins suppriment buts" ON buts_matchs FOR DELETE USING (
   EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
 );
-CREATE POLICY "Passes lisibles par tous" ON passes_matchs FOR SELECT USING (true);
-CREATE POLICY "Admins créent passes" ON passes_matchs FOR INSERT WITH CHECK (
+CREATE POLICY IF NOT EXISTS "Passes lisibles par tous" ON passes_matchs FOR SELECT USING (true);
+CREATE POLICY IF NOT EXISTS "Admins créent passes" ON passes_matchs FOR INSERT WITH CHECK (
   EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
 );
-CREATE POLICY "Admins modifient passes" ON passes_matchs FOR UPDATE USING (
+CREATE POLICY IF NOT EXISTS "Admins modifient passes" ON passes_matchs FOR UPDATE USING (
   EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
 );
-CREATE POLICY "Admins suppriment passes" ON passes_matchs FOR DELETE USING (
+CREATE POLICY IF NOT EXISTS "Admins suppriment passes" ON passes_matchs FOR DELETE USING (
   EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
 );
 
 -- 6. Formations
-CREATE POLICY "Formations lisibles par tous" ON formations FOR SELECT USING (true);
-CREATE POLICY "Capitaines gèrent leurs formations" ON formations FOR ALL USING (
+CREATE POLICY IF NOT EXISTS "Formations lisibles par tous" ON formations FOR SELECT USING (true);
+CREATE POLICY IF NOT EXISTS "Capitaines gèrent leurs formations" ON formations FOR ALL USING (
   EXISTS (SELECT 1 FROM "équipes" WHERE id = formations."équipe_id" AND capitaine_id = auth.uid()) OR
   EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
 );
 
 -- 7. Classements
-CREATE POLICY "Classements lisibles par tous" ON classements FOR SELECT USING (true);
-CREATE POLICY "Admins gèrent classements" ON classements FOR ALL USING (
+CREATE POLICY IF NOT EXISTS "Classements lisibles par tous" ON classements FOR SELECT USING (true);
+CREATE POLICY IF NOT EXISTS "Admins gèrent classements" ON classements FOR ALL USING (
   EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
 );
 
@@ -241,9 +241,22 @@ CREATE POLICY "Admins gèrent classements" ON classements FOR ALL USING (
 -- CONTRAINTES ET TRIGGERS (UPDATED_AT)
 -- =====================================================
 
--- Ajouter les FK manquantes
-ALTER TABLE "équipes" ADD CONSTRAINT fk_capitaine FOREIGN KEY (capitaine_id) REFERENCES profiles(id) ON DELETE SET NULL;
-ALTER TABLE profiles ADD CONSTRAINT fk_team FOREIGN KEY (team_id) REFERENCES "équipes"(id) ON DELETE SET NULL;
+-- Ajouter les FK manquantes (idempotent via DO $$)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'fk_capitaine'
+  ) THEN
+    ALTER TABLE "équipes" ADD CONSTRAINT fk_capitaine FOREIGN KEY (capitaine_id) REFERENCES profiles(id) ON DELETE SET NULL;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'fk_team'
+  ) THEN
+    ALTER TABLE profiles ADD CONSTRAINT fk_team FOREIGN KEY (team_id) REFERENCES "équipes"(id) ON DELETE SET NULL;
+  END IF;
+END;
+$$;
 
 -- Fonction pour mettre à jour automatiquement 'updated_at'
 CREATE OR REPLACE FUNCTION update_modified_column()
@@ -255,6 +268,12 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Triggers
+DROP TRIGGER IF EXISTS update_profiles_modtime ON profiles;
+DROP TRIGGER IF EXISTS update_équipes_modtime ON "équipes";
+DROP TRIGGER IF EXISTS update_joueurs_modtime ON joueurs;
+DROP TRIGGER IF EXISTS update_matchs_modtime ON matchs;
+DROP TRIGGER IF EXISTS update_formations_modtime ON formations;
+
 CREATE TRIGGER update_profiles_modtime BEFORE UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION update_modified_column();
 CREATE TRIGGER update_équipes_modtime BEFORE UPDATE ON "équipes" FOR EACH ROW EXECUTE FUNCTION update_modified_column();
 CREATE TRIGGER update_joueurs_modtime BEFORE UPDATE ON joueurs FOR EACH ROW EXECUTE FUNCTION update_modified_column();

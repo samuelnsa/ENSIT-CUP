@@ -15,6 +15,37 @@ export interface Équipe {
   joueurs_count?: number;
 }
 
+const obtenirLogoDepuisÉcussonId = (écussonId: string): string => {
+  const écusson = écussonsDisponibles.find(e => e.id === écussonId);
+  return écusson?.url ?? écussonsDisponibles[0].url;
+};
+
+/** Détecte si une URL de logo est une source externe non fiable (Sofascore, Unsplash, Wikipedia...) */
+const estLogoExterneCassé = (url: string): boolean => {
+  if (!url?.trim()) return true;
+  return (
+    url.includes('sofascore') ||
+    url.includes('wikimedia') ||
+    url.includes('wikipedia') ||
+    url.includes('unsplash') ||
+    url.includes('1541447275071') // ancienne URL Unsplash par défaut
+  );
+};
+
+/**
+ * Normalise le logo d'une équipe :
+ * - Si le logo est une data URI SVG (généré localement), on le garde
+ * - Sinon on génère le logo depuis l'écusson_id
+ */
+const normaliserLogoÉquipe = (team: any): any => {
+  const logo: string = team.logo ?? '';
+  const logoValide = logo.startsWith('data:') && !estLogoExterneCassé(logo);
+  return {
+    ...team,
+    logo: logoValide ? logo : obtenirLogoDepuisÉcussonId(team.écusson_id),
+  };
+};
+
 export interface FormulaireCréationÉquipe {
   nom: string;
   classe: string;
@@ -35,7 +66,7 @@ export async function obtenirToutesLesÉquipes(includeNonActives = false): Promi
 
     const { data, error } = await query;
     if (error) throw error;
-    return data || [];
+    return (data || []).map(normaliserLogoÉquipe);
   } catch (erreur) {
     console.error('Erreur lors de la récupération des équipes :', erreur);
     return [];
@@ -53,7 +84,7 @@ export async function obtenirÉquipeParId(idÉquipe: string): Promise<Équipe | 
       .single();
 
     if (error) throw error;
-    return data;
+    return data ? normaliserLogoÉquipe(data) : null;
   } catch (erreur) {
     console.error(`Erreur lors de la récupération de l'équipe ${idÉquipe} :`, erreur);
     return null;
@@ -102,32 +133,69 @@ export async function mettreÀJourÉquipe(
   idÉquipe: string,
   miseÀJour: Partial<Équipe>
 ): Promise<Équipe | null> {
+  ensureSupabaseConfig();
   try {
+    // Vérifier la session active
+    const { data: sessionData } = await clientSupabase.auth.getSession();
+    if (!sessionData.session) {
+      throw new Error('Aucune session Supabase active. Reconnectez-vous en tant qu\'administrateur.');
+    }
+
+    const payload = {
+      ...miseÀJour,
+      ...(miseÀJour.écusson_id ? { logo: obtenirLogoDepuisÉcussonId(miseÀJour.écusson_id) } : {}),
+    };
+
+    // Supprimer les champs undefined
+    Object.keys(payload).forEach(k => (payload as any)[k] === undefined && delete (payload as any)[k]);
+
+    console.log('[mettreÀJourÉquipe] id:', idÉquipe, 'payload:', payload, 'uid:', sessionData.session.user.id);
+
     const { data, error } = await clientSupabase
       .from('équipes')
-      .update(miseÀJour)
+      .update(payload)
       .eq('id', idÉquipe)
       .select()
       .single();
 
-    if (error) throw error;
-    return data;
+    if (error) {
+      console.error('[mettreÀJourÉquipe] Erreur Supabase:', error);
+      throw error;
+    }
+    console.log('[mettreÀJourÉquipe] Succès:', data);
+    return data ? normaliserLogoÉquipe(data) : null;
   } catch (erreur) {
-    console.error(`Erreur lors de la mise à jour de l'équipe ${idÉquipe} :`, erreur);
-    return null;
+    console.error(`[mettreÀJourÉquipe] Erreur pour l'équipe ${idÉquipe} :`, erreur);
+    throw erreur;
   }
 }
 
 // Supprimer une équipe
 export async function supprimerÉquipe(idÉquipe: string): Promise<boolean> {
+  ensureSupabaseConfig();
   try {
-    const { error } = await clientSupabase.from('équipes').delete().eq('id', idÉquipe);
+    // Vérifier la session active
+    const { data: sessionData } = await clientSupabase.auth.getSession();
+    if (!sessionData.session) {
+      throw new Error('Aucune session Supabase active. Reconnectez-vous en tant qu\'administrateur.');
+    }
 
-    if (error) throw error;
+    console.log('[supprimerÉquipe] id:', idÉquipe, 'uid:', sessionData.session.user.id);
+
+    const { error } = await clientSupabase
+      .from('équipes')
+      .delete()
+      .eq('id', idÉquipe);
+
+    if (error) {
+      console.error('[supprimerÉquipe] Erreur Supabase:', error);
+      throw error;
+    }
+    console.log('[supprimerÉquipe] Succès');
     return true;
   } catch (erreur) {
-    console.error(`Erreur lors de la suppression de l'équipe ${idÉquipe} :`, erreur);
-    return false;
+    console.error(`[supprimerÉquipe] Erreur pour l'équipe ${idÉquipe} :`, erreur);
+    throw erreur;
   }
 }
 

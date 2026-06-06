@@ -83,7 +83,7 @@ export const TeamDetails = () => {
       </button>
 
       <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white rounded-xl p-8 flex flex-col lg:flex-row items-center gap-6">
-        <ImageWithFallback src={équipe.logo} alt={équipe.nom} className="w-24 h-24 rounded-lg object-cover" />
+        <ImageWithFallback src={équipe.logo} alt={équipe.nom} className="w-28 h-28 rounded-xl object-contain drop-shadow-xl bg-white/10 p-2" />
         <div className="flex-1">
           <h1 className="text-4xl font-bold">{équipe.nom}</h1>
           <p className="text-emerald-100 mt-2">{équipe.description}</p>

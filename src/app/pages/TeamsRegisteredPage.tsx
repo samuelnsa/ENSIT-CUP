@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Users } from 'lucide-react';
 import { useÉquipes, useTousLesJoueurs } from '../hooks/useSupabase';
+import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 
 export const TeamsRegisteredPage = () => {
   const navigate = useNavigate();
@@ -49,9 +50,13 @@ export const TeamsRegisteredPage = () => {
               onClick={() => navigate(`/teams/${team.id}`)}
               className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-md hover:border-emerald-300 transition-all cursor-pointer"
             >
-              <div className="relative h-32 bg-slate-200 overflow-hidden">
-                <img src={team.logo} alt={team.nom} className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
+              <div className="relative h-40 bg-slate-800 overflow-hidden flex items-center justify-center">
+                <ImageWithFallback
+                  src={team.logo}
+                  alt={team.nom}
+                  className="w-24 h-24 object-contain drop-shadow-lg"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
               </div>
 
               <div className="p-6">
