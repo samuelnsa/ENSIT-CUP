@@ -4,7 +4,7 @@ import { Settings, Play, Database, CheckCircle2, Users, Calendar, Eye, Trash2, C
 import { useAuth } from '../context/AuthContext';
 import { useAdminÉquipes, useMatchs, useTousLesJoueurs, invalidateCacheÉquipes } from '../hooks/useSupabase';
 import { créerÉquipe, désactiverÉquipe, supprimerÉquipe, mettreÀJourÉquipe, Équipe } from '../services/équipesService';
-import { mettreÀJourMatch, créerMatch, créerMatchs } from '../services/matchsService';
+import { mettreÀJourMatch, supprimerMatch, créerMatch, créerMatchs, ajouterBut, ajouterPasse, obtenirButsMatch, obtenirPassesMatch, validerDateMatch, determinerStatutAuto } from '../services/matchsService';
 import { getUserProfileFromSession, signUpWithUsername } from '../services/authService';
 import { Formation, obtenirFormationÉquipe } from '../services/formationsService';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
@@ -157,6 +157,14 @@ export const Admin = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [editingMatchId, setEditingMatchId] = useState<string | null>(null);
   const [matchData, setMatchData] = useState<Record<string, AdminMatchData>>({});
+  // Buteurs / passeurs
+  const [buteurMatchId, setButeurMatchId] = useState<string | null>(null);
+  type EntréeStats = { joueur_id: string; minute: string; équipe: 'A' | 'B' };
+  const [buts, setButs] = useState<EntréeStats[]>([]);
+  const [passes, setPasses] = useState<EntréeStats[]>([]);
+  const [butsSauvegardés, setButsSauvegardés] = useState<any[]>([]);
+  const [passesSauvegardées, setPassesSauvegardées] = useState<any[]>([]);
+  const [savingStats, setSavingStats] = useState(false);
   const [selectedTeamForCompo, setSelectedTeamForCompo] = useState<string | null>(null);
   const [teamForm, setTeamForm] = useState({ nom: '', classe: '', écusson_id: '', description: '', code_acces: '', capitaine_nom: '' });
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
@@ -530,57 +538,131 @@ export const Admin = () => {
   };
 
   const handleEditMatch = (matchId: string) => {
-    setEditingMatchId(prev => prev === matchId ? null : matchId);
-    if (!matchData[matchId]) {
+    const next = editingMatchId === matchId ? null : matchId;
+    setEditingMatchId(next);
+    if (next && !matchData[matchId]) {
       const match = matchs.find(m => m.id === matchId);
       if (match) {
-        setMatchData(prev => ({ 
-          ...prev, 
-          [matchId]: { 
-            score_a: match.score_a, 
-            score_b: match.score_b, 
-            statut: match.statut 
-          } 
+        setMatchData(prev => ({
+          ...prev,
+          [matchId]: { score_a: match.score_a, score_b: match.score_b, statut: match.statut },
         }));
       }
     }
+    // Fermer le panel buteurs si on change de match
+    if (buteurMatchId && buteurMatchId !== matchId) setButeurMatchId(null);
   };
 
   const handleMatchScoreChange = (matchId: string, team: 'A' | 'B', value: string) => {
     const score = value === '' ? null : parseInt(value, 10);
-    setMatchData(prev => ({ 
-      ...prev, 
-      [matchId]: { 
-        ...prev[matchId], 
-        [team === 'A' ? 'score_a' : 'score_b']: score 
-      } 
+    setMatchData(prev => ({
+      ...prev,
+      [matchId]: { ...prev[matchId], [team === 'A' ? 'score_a' : 'score_b']: score },
     }));
   };
 
   const handleMatchStatusChange = (matchId: string, value: 'à_venir' | 'en_cours' | 'terminé') => {
-    setMatchData(prev => ({ 
-      ...prev, 
-      [matchId]: { 
-        ...prev[matchId], 
-        statut: value 
-      } 
-    }));
+    setMatchData(prev => ({ ...prev, [matchId]: { ...prev[matchId], statut: value } }));
   };
 
-  const handleSaveMatch = async (matchId: string) => { 
-    const cur = matchData[matchId]; 
-    if (!cur) return; 
-    
-    await mettreÀJourMatch(matchId, {
-      score_a: cur.score_a ?? 0,
-      score_b: cur.score_b ?? 0,
-      statut: cur.statut
-    });
-    
-    setEditingMatchId(null); 
-    refetchMatchs();
+  const handleSaveMatch = async (matchId: string) => {
+    const cur = matchData[matchId];
+    if (!cur) return;
+    if (!(await ensureAdminSession())) return;
+    try {
+      await mettreÀJourMatch(matchId, {
+        score_a: cur.score_a,
+        score_b: cur.score_b,
+        statut: cur.statut,
+      });
+      setEditingMatchId(null);
+      await refetchMatchs();
+    } catch (err: any) {
+      alert('Erreur lors de la sauvegarde : ' + (err?.message || err));
+    }
   };
 
+  // Supprimer un match individuel
+  const handleDeleteMatch = async (matchId: string) => {
+    if (!confirm('Supprimer ce match et toutes ses statistiques ?')) return;
+    if (!(await ensureAdminSession())) return;
+    try {
+      await supprimerMatch(matchId);
+      if (editingMatchId === matchId) setEditingMatchId(null);
+      if (buteurMatchId === matchId) setButeurMatchId(null);
+      await refetchMatchs();
+    } catch (err: any) {
+      alert('Erreur lors de la suppression : ' + (err?.message || err));
+    }
+  };
+
+  // Ouvrir le panel buteurs/passeurs pour un match terminé
+  const handleOpenButeurs = async (matchId: string) => {
+    if (buteurMatchId === matchId) { setButeurMatchId(null); return; }
+    setButeurMatchId(matchId);
+    const [existingButs, existingPasses] = await Promise.all([
+      obtenirButsMatch(matchId),
+      obtenirPassesMatch(matchId),
+    ]);
+    setButsSauvegardés(existingButs);
+    setPassesSauvegardées(existingPasses);
+    setButs(existingButs.map((b: any) => ({ joueur_id: b.joueur_id, minute: String(b.minute), équipe: b.équipe })));
+    setPasses(existingPasses.map((p: any) => ({ joueur_id: p.joueur_id, minute: String(p.minute), équipe: p.équipe })));
+  };
+
+  const addBut = (équipe: 'A' | 'B') => setButs(prev => [...prev, { joueur_id: '', minute: '', équipe }]);
+  const removeBut = (idx: number) => setButs(prev => prev.filter((_, i) => i !== idx));
+  const updateBut = (idx: number, field: string, value: string) =>
+    setButs(prev => prev.map((b, i) => i === idx ? { ...b, [field]: value } : b));
+
+  const addPasse = (équipe: 'A' | 'B') => setPasses(prev => [...prev, { joueur_id: '', minute: '', équipe }]);
+  const removePasse = (idx: number) => setPasses(prev => prev.filter((_, i) => i !== idx));
+  const updatePasse = (idx: number, field: string, value: string) =>
+    setPasses(prev => prev.map((p, i) => i === idx ? { ...p, [field]: value } : p));
+
+  const handleSaveStats = async (matchId: string) => {
+    if (!(await ensureAdminSession())) return;
+    setSavingStats(true);
+    try {
+      // Supprimer les stats existantes et réinsérer
+      await clientSupabase.from('buts_matchs').delete().eq('match_id', matchId);
+      await clientSupabase.from('passes_matchs').delete().eq('match_id', matchId);
+
+      const butsValides = buts.filter(b => b.joueur_id && b.minute);
+      const passesValides = passes.filter(p => p.joueur_id && p.minute);
+
+      for (const b of butsValides) {
+        await ajouterBut(matchId, { match_id: matchId, joueur_id: b.joueur_id, minute: Number(b.minute), équipe: b.équipe });
+      }
+      for (const p of passesValides) {
+        await ajouterPasse(matchId, { match_id: matchId, joueur_id: p.joueur_id, minute: Number(p.minute), équipe: p.équipe });
+      }
+
+      // Mettre à jour les stats des joueurs (buts / passes_décisives)
+      const butParJoueur: Record<string, number> = {};
+      const passeParJoueur: Record<string, number> = {};
+      butsValides.forEach(b => { butParJoueur[b.joueur_id] = (butParJoueur[b.joueur_id] || 0) + 1; });
+      passesValides.forEach(p => { passeParJoueur[p.joueur_id] = (passeParJoueur[p.joueur_id] || 0) + 1; });
+
+      // Recalculer les totaux depuis toutes les stats de ce joueur
+      const allJoueurIds = [...new Set([...Object.keys(butParJoueur), ...Object.keys(passeParJoueur)])];
+      for (const joueurId of allJoueurIds) {
+        const updates: Record<string, number> = {};
+        if (butParJoueur[joueurId] !== undefined) updates.buts = butParJoueur[joueurId];
+        if (passeParJoueur[joueurId] !== undefined) updates.passes_décisives = passeParJoueur[joueurId];
+        if (Object.keys(updates).length > 0) {
+          await clientSupabase.from('joueurs').update(updates).eq('id', joueurId);
+        }
+      }
+
+      alert('Statistiques enregistrées avec succès !');
+      setButeurMatchId(null);
+    } catch (err: any) {
+      alert('Erreur lors de la sauvegarde des stats : ' + (err?.message || err));
+    } finally {
+      setSavingStats(false);
+    }
+  };
   const upcomingMatches = matchs.filter(m => m.statut === 'à_venir');
   const finishedMatches = matchs.filter(m => m.statut === 'terminé');
 
@@ -962,47 +1044,92 @@ export const Admin = () => {
           <div className="space-y-6">
             <div className="glass p-6">
               <h2 className="text-lg font-display font-bold mb-4 flex items-center gap-2 text-primary">
-                <Calendar className="w-5 h-5 text-accent-strong" /> Tous les Matchs
+                <Calendar className="w-5 h-5 text-accent-strong" /> Tous les Matchs ({matchs.length})
               </h2>
-              <div className="grid gap-4 lg:grid-cols-1 mb-6">
-                <div className="rounded-3xl border border-slate-700 bg-slate-950/80 p-6 flex flex-col items-start gap-4">
-                  <h3 className="text-sm font-semibold text-primary">Planificateur de rencontres</h3>
-                  <p className="text-sm text-slate-400">L’outil de planification des rencontres a été déplacé vers un planificateur dédié. Utilisez l’interface professionnelle (drag & drop) pour agencer rapidement les matchs et publier le planning.</p>
-                  <Link to="/admin/scheduler" className="btn-primary px-4 py-2">Ouvrir le planificateur</Link>
+              {/* Lien vers le planificateur */}
+              <div className="rounded-2xl border border-slate-700 bg-slate-950/80 p-4 flex flex-col sm:flex-row sm:items-center gap-4 mb-6">
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-primary">Planificateur drag & drop</p>
+                  <p className="text-xs text-slate-400 mt-0.5">Créez plusieurs matchs rapidement avec le planificateur visuel.</p>
                 </div>
+                <Link to="/admin/scheduler" className="btn-primary px-4 py-2 whitespace-nowrap">Ouvrir le planificateur</Link>
               </div>
+
               {matchs.length === 0 ? (
-                <p className="text-center py-8 text-muted">Aucun match</p>
+                <p className="text-center py-8 text-muted">Aucun match planifié.</p>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {matchs.map(match => {
                     const teamA = équipes.find(t => t.id === match.équipe_a_id);
                     const teamB = équipes.find(t => t.id === match.équipe_b_id);
                     const current = matchData[match.id] ?? { score_a: match.score_a, score_b: match.score_b, statut: match.statut };
+                    const isEditing = editingMatchId === match.id;
+                    const isButeurs = buteurMatchId === match.id;
+                    const playersA = joueurs.filter(p => p.équipe_id === match.équipe_a_id);
+                    const playersB = joueurs.filter(p => p.équipe_id === match.équipe_b_id);
+
+                    const statutColor =
+                      match.statut === 'terminé' ? 'bg-slate-500/20 text-slate-300' :
+                      match.statut === 'en_cours' ? 'bg-green-500/20 text-green-300' :
+                      'bg-blue-500/20 text-blue-300';
+
                     return (
-                      <div key={match.id} className="rounded-xl p-4 border bg-panel-ultra-soft border-panel">
-                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
-                          <div className="text-sm text-muted">
-                            {formaterDate(match.date)} à {match.heure} · {match.lieu} · <span className="capitalize font-semibold text-accent-strong">{match.statut}</span>
+                      <div key={match.id} className="rounded-xl border bg-panel-ultra-soft border-panel overflow-hidden">
+                        {/* Header du match */}
+                        <div className="p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${statutColor}`}>{match.statut}</span>
+                              <span className="text-xs text-muted">{formaterDate(match.date)} · {match.heure} · {match.lieu}</span>
+                            </div>
+                            {/* Actions */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <button
+                                onClick={() => handleEditMatch(match.id)}
+                                className={`py-1.5 px-3 rounded-lg text-xs font-semibold border transition-colors ${isEditing ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' : 'btn-secondary'}`}
+                              >
+                                {isEditing ? 'Fermer' : '✏️ Modifier'}
+                              </button>
+                              {match.statut === 'terminé' && (
+                                <button
+                                  onClick={() => handleOpenButeurs(match.id)}
+                                  className={`py-1.5 px-3 rounded-lg text-xs font-semibold border transition-colors ${isButeurs ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30' : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20 hover:bg-emerald-500/20'}`}
+                                >
+                                  {isButeurs ? 'Fermer stats' : '⚽ Buteurs/Passeurs'}
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleDeleteMatch(match.id)}
+                                className="py-1.5 px-3 rounded-lg text-xs font-semibold border bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20 transition-colors flex items-center gap-1"
+                              >
+                                <Trash2 className="w-3 h-3" /> Supprimer
+                              </button>
+                            </div>
                           </div>
-                          <button onClick={() => handleEditMatch(match.id)} className={`btn-secondary w-fit py-1.5 px-3 text-xs ${editingMatchId === match.id ? 'btn-accent-on' : ''}`}>
-                            {editingMatchId === match.id ? 'Fermer' : 'Remplir'}
-                          </button>
+
+                          {/* Équipes et score */}
+                          <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <ImageWithFallback src={teamA?.logo || ''} alt={teamA?.nom || ''} className="w-8 h-8 rounded-full object-contain flex-shrink-0" />
+                              <span className="font-semibold text-primary truncate">{teamA?.nom}</span>
+                            </div>
+                            <div className="text-center flex-shrink-0">
+                              {match.statut !== 'à_venir' && match.score_a !== null && match.score_b !== null
+                                ? <span className="text-xl font-black text-primary">{match.score_a} – {match.score_b}</span>
+                                : <span className="text-lg font-bold text-muted">VS</span>
+                              }
+                            </div>
+                            <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
+                              <span className="font-semibold text-primary truncate">{teamB?.nom}</span>
+                              <ImageWithFallback src={teamB?.logo || ''} alt={teamB?.nom || ''} className="w-8 h-8 rounded-full object-contain flex-shrink-0" />
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between mb-4 gap-4">
-                          <div className="flex items-center gap-3 flex-1">
-                            <ImageWithFallback src={teamA?.logo || ''} alt={teamA?.nom || ''} className="w-8 h-8 rounded-full object-cover" />
-                            <span className="font-semibold text-primary">{teamA?.nom}</span>
-                          </div>
-                          <div className="text-2xl font-black text-white-10">VS</div>
-                          <div className="flex items-center gap-3 flex-1 justify-end">
-                            <span className="font-semibold text-primary">{teamB?.nom}</span>
-                            <ImageWithFallback src={teamB?.logo || ''} alt={teamB?.nom || ''} className="w-8 h-8 rounded-full object-cover" />
-                          </div>
-                        </div>
-                        {editingMatchId === match.id && (
-                          <div className="border-t border-panel pt-4 space-y-4 animate-slide-up">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                        {/* Panel modifier le score/statut */}
+                        {isEditing && (
+                          <div className="border-t border-panel p-4 space-y-4 animate-slide-up bg-panel-dark">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               <div>
                                 <label className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Score {teamA?.nom}</label>
                                 <input type="number" min="0" value={current.score_a ?? ''} onChange={e => handleMatchScoreChange(match.id, 'A', e.target.value)} className="input-field pl-3" placeholder="0" />
@@ -1011,7 +1138,7 @@ export const Admin = () => {
                                 <label className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Score {teamB?.nom}</label>
                                 <input type="number" min="0" value={current.score_b ?? ''} onChange={e => handleMatchScoreChange(match.id, 'B', e.target.value)} className="input-field pl-3" placeholder="0" />
                               </div>
-                              <div className="md:col-span-2">
+                              <div className="sm:col-span-2">
                                 <label htmlFor={`statut-${match.id}`} className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Statut</label>
                                 <select id={`statut-${match.id}`} value={current.statut} onChange={e => handleMatchStatusChange(match.id, e.target.value as any)} className="select-field">
                                   <option value="à_venir">À venir</option>
@@ -1020,9 +1147,79 @@ export const Admin = () => {
                                 </select>
                               </div>
                             </div>
-                            <div className="flex flex-col gap-3 md:flex-row">
-                              <button onClick={() => handleSaveMatch(match.id)} className="btn-primary py-2 text-sm flex-1">Enregistrer le match</button>
+                            <div className="flex flex-col sm:flex-row gap-3">
+                              <button onClick={() => handleSaveMatch(match.id)} className="btn-primary py-2 text-sm flex-1">Enregistrer</button>
                               <button onClick={() => setEditingMatchId(null)} className="btn-secondary py-2 text-sm flex-1">Annuler</button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Panel buteurs / passeurs */}
+                        {isButeurs && (
+                          <div className="border-t border-panel p-4 space-y-6 animate-slide-up bg-panel-dark">
+                            <p className="text-xs text-muted">Les statistiques sauvegardées remplacent les précédentes. Laissez vide si aucun but/passe.</p>
+
+                            {/* BUTS */}
+                            {(['A', 'B'] as const).map(side => {
+                              const team = side === 'A' ? teamA : teamB;
+                              const players = side === 'A' ? playersA : playersB;
+                              const butsCôté = buts.filter(b => b.équipe === side);
+                              return (
+                                <div key={side} className="space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-sm font-semibold text-primary flex items-center gap-2">⚽ Buts — {team?.nom}</span>
+                                    <button onClick={() => addBut(side)} className="text-xs px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 hover:bg-emerald-500/20">+ Ajouter</button>
+                                  </div>
+                                  {butsCôté.map((b, relIdx) => {
+                                    const absIdx = buts.findIndex((x, i) => x === b && buts.filter((y, j) => y.équipe === side && j <= i).length === relIdx + 1);
+                                    const realIdx = buts.indexOf(b, relIdx > 0 ? buts.indexOf(buts.filter(x => x.équipe === side)[relIdx - 1]) + 1 : 0);
+                                    return (
+                                      <div key={relIdx} className="flex gap-2 items-center">
+                                        <select value={b.joueur_id} onChange={e => updateBut(buts.indexOf(b), 'joueur_id', e.target.value)} className="select-field flex-1 text-sm">
+                                          <option value="">— Joueur —</option>
+                                          {players.map(p => <option key={p.id} value={p.id}>#{p.numéro} {p.nom}</option>)}
+                                        </select>
+                                        <input type="number" min="1" max="120" placeholder="min" value={b.minute} onChange={e => updateBut(buts.indexOf(b), 'minute', e.target.value)} className="input-field w-20 text-sm" />
+                                        <button onClick={() => removeBut(buts.indexOf(b))} className="text-red-400 hover:text-red-300 px-2 py-1 text-sm">✕</button>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })}
+
+                            <div className="border-t border-panel pt-4" />
+
+                            {/* PASSES */}
+                            {(['A', 'B'] as const).map(side => {
+                              const team = side === 'A' ? teamA : teamB;
+                              const players = side === 'A' ? playersA : playersB;
+                              const passesCôté = passes.filter(p => p.équipe === side);
+                              return (
+                                <div key={side} className="space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-sm font-semibold text-primary flex items-center gap-2">🎯 Passes déc. — {team?.nom}</span>
+                                    <button onClick={() => addPasse(side)} className="text-xs px-2 py-1 rounded-lg bg-yellow-500/10 text-yellow-300 border border-yellow-500/20 hover:bg-yellow-500/20">+ Ajouter</button>
+                                  </div>
+                                  {passesCôté.map((p, relIdx) => (
+                                    <div key={relIdx} className="flex gap-2 items-center">
+                                      <select value={p.joueur_id} onChange={e => updatePasse(passes.indexOf(p), 'joueur_id', e.target.value)} className="select-field flex-1 text-sm">
+                                        <option value="">— Joueur —</option>
+                                        {players.map(pl => <option key={pl.id} value={pl.id}>#{pl.numéro} {pl.nom}</option>)}
+                                      </select>
+                                      <input type="number" min="1" max="120" placeholder="min" value={p.minute} onChange={e => updatePasse(passes.indexOf(p), 'minute', e.target.value)} className="input-field w-20 text-sm" />
+                                      <button onClick={() => removePasse(passes.indexOf(p))} className="text-red-400 hover:text-red-300 px-2 py-1 text-sm">✕</button>
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })}
+
+                            <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                              <button onClick={() => handleSaveStats(match.id)} disabled={savingStats} className="btn-primary py-2 text-sm flex-1">
+                                {savingStats ? 'Enregistrement...' : '💾 Sauvegarder les stats'}
+                              </button>
+                              <button onClick={() => setButeurMatchId(null)} className="btn-secondary py-2 text-sm flex-1">Fermer</button>
                             </div>
                           </div>
                         )}
@@ -1034,7 +1231,7 @@ export const Admin = () => {
             </div>
           </div>
         </TabsContent>
-      </Tabs>
+        </Tabs>
     </div>
   );
 };

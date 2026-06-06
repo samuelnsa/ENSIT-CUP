@@ -197,6 +197,9 @@ export const useMatchs = (): ÉtatMatchs => {
 
   useEffect(() => {
     chargerMatchs();
+    // Rafraîchir les statuts toutes les 60s (en_cours / terminé automatique)
+    const interval = setInterval(chargerMatchs, 60_000);
+    return () => clearInterval(interval);
   }, []);
 
   return { matchs, chargement, erreur, refetch: chargerMatchs };

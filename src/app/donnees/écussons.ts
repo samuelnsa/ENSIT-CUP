@@ -21,7 +21,7 @@ const CLUBS: ClubConfig[] = [
   { id: 'bayern',      nom: 'Bayern Munich',     bg: '#DC052D', text: '#FFFFFF', abbr: 'FCB', ring: '#0066B2' },
   { id: 'liverpool',   nom: 'Liverpool FC',      bg: '#C8102E', text: '#FFFFFF', abbr: 'LFC', ring: '#F6EB61' },
   { id: 'arsenal',     nom: 'Arsenal FC',        bg: '#EF0107', text: '#FFFFFF', abbr: 'AFC', ring: '#FFFFFF' },
-  { id: 'lazio-rome',  nom: 'Lazio Rome',        bg: '#87CEEB', text: '#003366', abbr: 'LAZ', ring: '#003366' },
+  { id: 'juventus',  nom: 'juventus',        bg: '#87CEEB', text: '#003366', abbr: 'JUV', ring: '#003366' },
   { id: 'ac-milan',    nom: 'AC Milan',          bg: '#FB090B', text: '#000000', abbr: 'ACM', ring: '#000000' },
   { id: 'inter-milan', nom: 'Inter Milan',       bg: '#003399', text: '#000000', abbr: 'INT', ring: '#000000' },
 ];

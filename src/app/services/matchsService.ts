@@ -41,11 +41,58 @@ export interface FormulaireCreationMatch {
   score_b?: number | null;
 }
 
-const determinerStatut = (score_a?: number | null, score_b?: number | null) => {
-  if (score_a !== undefined && score_b !== undefined && score_a !== null && score_b !== null) {
-    return 'terminé' as const;
+/**
+ * Détermine automatiquement le statut d'un match selon sa date/heure et ses scores.
+ * - Si les deux scores sont renseignés → terminé
+ * - Si la date+heure est dépassée → en_cours (le match a commencé)
+ * - Sinon → à_venir
+ */
+export const determinerStatutAuto = (
+  date: string,
+  heure: string,
+  durée: string | number = 90,
+  score_a?: number | null,
+  score_b?: number | null
+): 'à_venir' | 'en_cours' | 'terminé' => {
+  // Scores renseignés → terminé
+  if (score_a !== undefined && score_a !== null && score_b !== undefined && score_b !== null) {
+    return 'terminé';
   }
-  return 'à_venir' as const;
+
+  try {
+    const matchDateTime = new Date(`${date}T${heure}:00`);
+    const now = new Date();
+    const duréeMs = (Number(durée) || 90) * 60 * 1000;
+
+    if (now >= new Date(matchDateTime.getTime() + duréeMs)) {
+      return 'terminé'; // Le temps réglementaire est dépassé
+    }
+    if (now >= matchDateTime) {
+      return 'en_cours'; // Le match a démarré
+    }
+  } catch {
+    // date/heure invalide → fallback à_venir
+  }
+
+  return 'à_venir';
+};
+
+/**
+ * Vérifie qu'une date de match n'est pas dans le passé.
+ * Retourne un message d'erreur ou null si OK.
+ */
+export const validerDateMatch = (date: string, heure: string): string | null => {
+  try {
+    const matchDateTime = new Date(`${date}T${heure}:00`);
+    const now = new Date();
+    // Tolérance de 5 minutes (pour éviter les faux positifs)
+    if (matchDateTime.getTime() < now.getTime() - 5 * 60 * 1000) {
+      return `La date/heure du match (${date} à ${heure}) est dans le passé.`;
+    }
+  } catch {
+    return 'Date ou heure invalide.';
+  }
+  return null;
 };
 
 // Récupérer tous les matchs
@@ -57,7 +104,26 @@ export async function obtenirTousLesMatchs(): Promise<Match[]> {
       .order('date', { ascending: false });
 
     if (error) throw error;
-    return data || [];
+
+    const matchs: Match[] = data || [];
+
+    // Mettre à jour automatiquement les statuts en DB pour les matchs dont l'heure est dépassée
+    const àMettreÀJour = matchs.filter(m => {
+      if (m.statut === 'terminé') return false; // déjà terminé, on ne touche pas
+      const nouveauStatut = determinerStatutAuto(m.date, m.heure, m.durée, m.score_a, m.score_b);
+      return nouveauStatut !== m.statut;
+    });
+
+    if (àMettreÀJour.length > 0) {
+      // Mise à jour silencieuse en arrière-plan
+      for (const m of àMettreÀJour) {
+        const nouveauStatut = determinerStatutAuto(m.date, m.heure, m.durée, m.score_a, m.score_b);
+        await clientSupabase.from('matchs').update({ statut: nouveauStatut }).eq('id', m.id);
+        m.statut = nouveauStatut; // Mettre à jour l'objet en mémoire aussi
+      }
+    }
+
+    return matchs;
   } catch (erreur) {
     console.error('Erreur lors de la récupération des matchs :', erreur);
     return [];
@@ -149,8 +215,18 @@ export async function créerMatch(formulaire: FormulaireCreationMatch): Promise<
     return null;
   }
 
+  // Refuser les dates passées
+  const erreurDate = validerDateMatch(formulaire.date, formulaire.heure);
+  if (erreurDate) throw new Error(erreurDate);
+
   try {
-    const statut = determinerStatut(formulaire.score_a, formulaire.score_b);
+    const statut = determinerStatutAuto(
+      formulaire.date,
+      formulaire.heure,
+      formulaire.durée,
+      formulaire.score_a,
+      formulaire.score_b
+    );
     const nouveauMatch = {
       ...formulaire,
       score_a: formulaire.score_a ?? null,
@@ -172,17 +248,19 @@ export async function créerMatch(formulaire: FormulaireCreationMatch): Promise<
     }
     return data;
   } catch (erreur: any) {
-    console.error('Erreur lors de la création du match :', JSON.stringify(erreur, Object.getOwnPropertyNames(erreur).reduce((acc, key) => ({ ...acc, [key]: (erreur as any)[key] }), {}), 2));
-    if (erreur?.message) {
-      throw new Error(erreur.message);
-    }
+    console.error('Erreur lors de la création du match :', erreur);
+    if (erreur?.message) throw new Error(erreur.message);
     return null;
   }
 }
 
 export async function créerMatchs(formulaires: FormulaireCreationMatch[]): Promise<Match[] | null> {
-  if (formulaires.length === 0) {
-    return [];
+  if (formulaires.length === 0) return [];
+
+  // Valider toutes les dates
+  for (const f of formulaires) {
+    const erreurDate = validerDateMatch(f.date, f.heure);
+    if (erreurDate) throw new Error(erreurDate);
   }
 
   const invalidMatches = formulaires.filter(formulaire => !validerFormulaireMatch(formulaire));
@@ -192,17 +270,14 @@ export async function créerMatchs(formulaires: FormulaireCreationMatch[]): Prom
   }
 
   try {
-    const nouveauxMatchs = formulaires.map(formulaire => {
-      const statut = determinerStatut(formulaire.score_a, formulaire.score_b);
-      return {
-        ...formulaire,
-        score_a: formulaire.score_a ?? null,
-        score_b: formulaire.score_b ?? null,
-        durée: formulaire.durée ?? '90',
-        statut,
-        date_création: new Date().toISOString(),
-      };
-    });
+    const nouveauxMatchs = formulaires.map(formulaire => ({
+      ...formulaire,
+      score_a: formulaire.score_a ?? null,
+      score_b: formulaire.score_b ?? null,
+      durée: formulaire.durée ?? '90',
+      statut: determinerStatutAuto(formulaire.date, formulaire.heure, formulaire.durée, formulaire.score_a, formulaire.score_b),
+      date_création: new Date().toISOString(),
+    }));
 
     const { data, error } = await clientSupabase
       .from('matchs')
@@ -211,25 +286,41 @@ export async function créerMatchs(formulaires: FormulaireCreationMatch[]): Prom
 
     if (error) {
       console.error('Erreur Supabase lors de la création des matchs :', JSON.stringify(error, null, 2));
-      console.error('Payload envoyé :', JSON.stringify(nouveauxMatchs, null, 2));
       throw error;
     }
 
     return data || [];
   } catch (erreur) {
-    console.error('Erreur lors de la création des matchs :', JSON.stringify(erreur, Object.getOwnPropertyNames(erreur).reduce((acc, key) => ({ ...acc, [key]: (erreur as any)[key] }), {}), 2));
+    console.error('Erreur lors de la création des matchs :', erreur);
     return null;
   }
 }
 
-// Mettre à jour un match
+// Mettre à jour un match (statut auto-calculé si scores fournis)
 export async function mettreÀJourMatch(
   idMatch: string,
   miseÀJour: Partial<Match>
 ): Promise<Match | null> {
   try {
-    const statutTermine = miseÀJour.score_a !== undefined && miseÀJour.score_b !== undefined && miseÀJour.score_a !== null && miseÀJour.score_b !== null;
-    const payload = statutTermine ? { ...miseÀJour, statut: 'terminé' as const } : miseÀJour;
+    // Recalculer le statut si les scores changent
+    let payload = { ...miseÀJour };
+    if (miseÀJour.score_a !== undefined || miseÀJour.score_b !== undefined) {
+      const match = await obtenirMatchParId(idMatch);
+      if (match) {
+        const score_a = miseÀJour.score_a !== undefined ? miseÀJour.score_a : match.score_a;
+        const score_b = miseÀJour.score_b !== undefined ? miseÀJour.score_b : match.score_b;
+        // Seulement si statut non explicitement fourni dans la mise à jour
+        if (!miseÀJour.statut) {
+          payload.statut = determinerStatutAuto(
+            miseÀJour.date || match.date,
+            miseÀJour.heure || match.heure,
+            miseÀJour.durée || match.durée,
+            score_a,
+            score_b
+          );
+        }
+      }
+    }
 
     const { data, error } = await clientSupabase
       .from('matchs')
@@ -243,6 +334,22 @@ export async function mettreÀJourMatch(
   } catch (erreur) {
     console.error(`Erreur lors de la mise à jour du match ${idMatch} :`, erreur);
     return null;
+  }
+}
+
+// Supprimer un match et ses stats associées
+export async function supprimerMatch(idMatch: string): Promise<boolean> {
+  try {
+    // Supprimer buts et passes d'abord (CASCADE devrait le faire mais sécurité supplémentaire)
+    await clientSupabase.from('buts_matchs').delete().eq('match_id', idMatch);
+    await clientSupabase.from('passes_matchs').delete().eq('match_id', idMatch);
+
+    const { error } = await clientSupabase.from('matchs').delete().eq('id', idMatch);
+    if (error) throw error;
+    return true;
+  } catch (erreur) {
+    console.error(`Erreur lors de la suppression du match ${idMatch} :`, erreur);
+    throw erreur;
   }
 }
 

@@ -1,15 +1,19 @@
 import React, { useState, useMemo } from 'react';
 import { useÉquipes, useMatchs } from '../hooks/useSupabase';
-import { créerMatch, créerMatchs } from '../services/matchsService';
+import { créerMatch, créerMatchs, validerDateMatch } from '../services/matchsService';
 import { useNavigate } from 'react-router-dom';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
+import { Calendar, Clock, Download, ArrowLeft, Zap, Shield, AlertCircle, CheckCircle, Trash2, Plus } from 'lucide-react';
+
+/** Retourne la date du jour au format YYYY-MM-DD (pour l'attribut min des inputs date) */
+const aujourd_hui = () => new Date().toISOString().slice(0, 10);
 
 export const MatchScheduler: React.FC = () => {
   const { équipes, chargement: chargementÉquipes } = useÉquipes();
   const { refetch: refetchMatchs } = useMatchs();
   const navigate = useNavigate();
 
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [selectedDate, setSelectedDate] = useState<string>(aujourd_hui());
   const [selectedTime, setSelectedTime] = useState<string>('09:00');
 
   // dynamic scheduler settings
@@ -33,9 +37,11 @@ export const MatchScheduler: React.FC = () => {
 
   const onDragStart = (e: React.DragEvent, teamId: string) => {
     e.dataTransfer.setData('text/plain', teamId);
+    e.dataTransfer.effectAllowed = 'move';
   };
 
   const onDropToSlot = (index: number, side: 'A' | 'B', e: React.DragEvent) => {
+    e.preventDefault();
     const teamId = e.dataTransfer.getData('text/plain');
     if (!teamId) return;
     setSlots(prev => {
@@ -65,12 +71,18 @@ export const MatchScheduler: React.FC = () => {
   const handleCreateMatch = async (index: number) => {
     const slot = slots[index];
     if (!slot.teamA || !slot.teamB) return;
+
+    const dateSlot = slot.date || selectedDate;
+    const heureSlot = slot.heure || selectedTime;
+    const erreurDate = validerDateMatch(dateSlot, heureSlot);
+    if (erreurDate) { alert(erreurDate); return; }
+
     try {
       await créerMatch({
         équipe_a_id: slot.teamA,
         équipe_b_id: slot.teamB,
-        date: slot.date || selectedDate,
-        heure: slot.heure || selectedTime,
+        date: dateSlot,
+        heure: heureSlot,
         durée: String(slot.durée ?? slotDuration),
         lieu: 'Terrain Central ENSIT',
         score_a: slot.scoreA === '' ? null : Number(slot.scoreA),
@@ -78,10 +90,10 @@ export const MatchScheduler: React.FC = () => {
       });
       await refetchMatchs();
       clearSlot(index);
-      alert('Match créé');
+      alert('Match créé avec succès !');
     } catch (err: any) {
       console.error('Erreur création via scheduler :', err);
-      alert('Erreur lors de la création du match : ' + (err?.message || err));
+      alert('Erreur : ' + (err?.message || err));
     }
   };
 
@@ -100,7 +112,6 @@ export const MatchScheduler: React.FC = () => {
         });
       }
     });
-    // same team on both sides already prevented, but check empty
     return errors;
   };
 
@@ -122,19 +133,27 @@ export const MatchScheduler: React.FC = () => {
         score_b: s.scoreB === '' ? null : Number(s.scoreB),
       }))
       .filter(f => f.équipe_a_id && f.équipe_b_id);
+
     if (formulaires.length === 0) {
       alert('Aucun créneau rempli à sauvegarder.');
       return;
     }
+
+    // Valider toutes les dates avant d'envoyer
+    for (const f of formulaires) {
+      const err = validerDateMatch(f.date, f.heure);
+      if (err) { alert(err); return; }
+    }
+
     try {
       const created = await créerMatchs(formulaires);
       if (!created) throw new Error('Échec création en lot');
       await refetchMatchs();
       setSlots(initialSlots);
-      alert(`Création réussie (${created.length} matchs)`);
+      alert(`${created.length} match(s) créé(s) avec succès !`);
     } catch (err: any) {
       console.error('Erreur création en lot :', err);
-      alert('Erreur lors de la création en lot : ' + (err?.message || err));
+      alert('Erreur : ' + (err?.message || err));
     }
   };
 
@@ -166,126 +185,371 @@ export const MatchScheduler: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  const filledSlotsCount = slots.filter(s => s.teamA && s.teamB).length;
+  const errors = validateSlots();
+
   return (
-    <div className="p-8 max-w-6xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Planificateur de rencontres (Drag & Drop)</h1>
-        <div className="flex gap-3">
-          <button className="btn-secondary" onClick={() => navigate('/admin')}>Retour Admin</button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-6">
-        <div className="col-span-1 rounded-xl p-4 border border-panel">
-          <h3 className="font-semibold mb-3">Équipes</h3>
-          {chargementÉquipes ? (
-            <p>Chargement...</p>
-          ) : (
-            <div className="space-y-2 max-h-[60vh] overflow-auto">
-              {équipes.map(team => (
-                <div key={team.id} draggable onDragStart={e => onDragStart(e, team.id)} className="p-2 rounded flex items-center gap-3 hover:bg-white/5 cursor-grab">
-                  <ImageWithFallback src={team.logo || ''} alt={team.nom} className="w-8 h-8 rounded-full" />
-                  <div>
-                    <div className="font-medium">{team.nom}</div>
-                    <div className="text-xs text-slate-400">{team.classe}</div>
-                  </div>
-                </div>
-              ))}
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+      <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
+        
+        {/* En-tête moderne */}
+        <div className="glass p-6 rounded-3xl border border-panel">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => navigate('/admin')} 
+                className="p-3 rounded-xl bg-slate-800/50 border border-slate-700 hover:bg-slate-700/50 transition-all"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-display font-black text-primary flex items-center gap-3">
+                  <Calendar className="w-8 h-8 text-accent-strong" />
+                  Planificateur de Matchs
+                </h1>
+                <p className="text-sm text-muted mt-1">Glissez-déposez les équipes pour créer des rencontres</p>
+              </div>
             </div>
-          )}
+            
+            {/* Stats rapides */}
+            <div className="flex gap-3">
+              <div className="px-4 py-2 rounded-xl bg-blue-500/10 border border-blue-500/20">
+                <div className="text-xs text-blue-300 font-semibold">Créneaux remplis</div>
+                <div className="text-2xl font-black text-blue-400">{filledSlotsCount}/{slotCount}</div>
+              </div>
+              {Object.keys(errors).length > 0 && (
+                <div className="px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/20">
+                  <div className="text-xs text-red-300 font-semibold">Conflits</div>
+                  <div className="text-2xl font-black text-red-400">{Object.keys(errors).length}</div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
-        <div className="col-span-2 rounded-xl p-4 border border-panel">
-          <div className="grid grid-cols-2 gap-4 items-center mb-4">
-            <label htmlFor="scheduler-date" className="text-sm text-slate-400">Date</label>
-            <input id="scheduler-date" type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="input-field" />
-            <label htmlFor="scheduler-time" className="text-sm text-slate-400">Heure</label>
-            <input id="scheduler-time" type="time" value={selectedTime} onChange={e => setSelectedTime(e.target.value)} className="input-field" />
-            <label htmlFor="scheduler-slot-count" className="text-sm text-slate-400">Nombre de créneaux</label>
-            <input id="scheduler-slot-count" type="number" min={1} max={24} value={slotCount} onChange={e => {
-              const v = Math.max(1, Math.min(24, Number(e.target.value) || 1));
-              setSlotCount(v);
-              setSlots(prev => {
-                const next = Array.from({ length: v }).map((_, i) =>
-                  prev[i]
-                    ? { ...prev[i] }
-                    : { teamA: '', teamB: '', date: selectedDate, heure: selectedTime, durée: slotDuration, scoreA: '', scoreB: '' }
-                );
-                return next;
-              });
-            }} className="input-field w-24" />
-            <label htmlFor="scheduler-slot-duration" className="text-sm text-slate-400">Durée (min)</label>
-            <input id="scheduler-slot-duration" type="number" min={5} step={5} value={slotDuration} onChange={e => setSlotDuration(Number(e.target.value) || 25)} className="input-field w-20" />
+        <div className="grid lg:grid-cols-4 gap-6">
+          
+          {/* Sidebar - Liste des équipes */}
+          <div className="lg:col-span-1">
+            <div className="glass p-6 rounded-3xl border border-panel sticky top-6">
+              <h3 className="text-lg font-display font-bold mb-4 flex items-center gap-2 text-primary">
+                <Shield className="w-5 h-5 text-accent-strong" />
+                Équipes ({équipes.length})
+              </h3>
+              {chargementÉquipes ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent-strong"></div>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[calc(100vh-250px)] overflow-auto pr-2 custom-scrollbar">
+                  {équipes.map(team => (
+                    <div 
+                      key={team.id} 
+                      draggable 
+                      onDragStart={e => onDragStart(e, team.id)} 
+                      className="group p-3 rounded-xl flex items-center gap-3 bg-slate-800/30 border border-slate-700/50 hover:bg-slate-700/40 hover:border-accent-strong/30 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.02] card-3d"
+                    >
+                      <div className="relative">
+                        <ImageWithFallback 
+                          src={team.logo || ''} 
+                          alt={team.nom} 
+                          className="w-10 h-10 rounded-full ring-2 ring-slate-700 group-hover:ring-accent-strong/50 transition-all" 
+                        />
+                        <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-slate-900"></div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm text-primary truncate">{team.nom}</div>
+                        <div className="text-xs text-muted">{team.classe}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="flex gap-3 items-center mb-4">
-            <button className="btn-primary" onClick={batchCreateFilledSlots}>Créer tous les matchs remplis</button>
-            <button className="btn-secondary" onClick={exportCSV}>Exporter CSV</button>
-          </div>
-
-          <div className="grid gap-3">
-            {slots.map((slot, i) => (
-              <div key={i} className="p-3 rounded-lg grid grid-cols-3 items-center bg-panel-soft">
-                <div className="col-span-1" onDragOver={allowDrop} onDrop={e => onDropToSlot(i, 'A', e)}>
-                  <div className="text-xs text-slate-400 mb-1">Équipe A</div>
-                  {slot.teamA ? (
-                    <div className="flex items-center gap-2 p-2 bg-white/5 rounded">
-                      <ImageWithFallback src={(équipes.find(t => t.id === slot.teamA) || {}).logo || ''} alt="" className="w-6 h-6 rounded-full" />
-                      <div className="font-medium">{(équipes.find(t => t.id === slot.teamA) || {}).nom}</div>
-                    </div>
-                  ) : (
-                    <div className="p-3 rounded bg-transparent border-dashed text-slate-400">Glisser une équipe ici</div>
-                  )}
+          {/* Zone principale - Configuration et créneaux */}
+          <div className="lg:col-span-3 space-y-6">
+            
+            {/* Panneau de configuration */}
+            <div className="glass p-6 rounded-3xl border border-panel">
+              <h3 className="text-lg font-display font-bold mb-4 flex items-center gap-2 text-primary">
+                <Zap className="w-5 h-5 text-accent-strong" />
+                Configuration globale
+              </h3>
+              
+              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div>
+                  <label htmlFor="scheduler-date" className="block text-xs font-semibold text-muted mb-2 flex items-center gap-2">
+                    <Calendar className="w-3.5 h-3.5" /> Date par défaut
+                  </label>
+                  <input 
+                    id="scheduler-date" 
+                    type="date" 
+                    min={aujourd_hui()} 
+                    value={selectedDate} 
+                    onChange={e => setSelectedDate(e.target.value)} 
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-800/50 border border-slate-700 text-primary focus:border-accent-strong focus:ring-2 focus:ring-accent-strong/20 transition-all outline-none" 
+                  />
                 </div>
-                <div className="col-span-1 text-center">
-                  <div className="grid gap-2">
-                    <label htmlFor={`slot-date-${i}`} className="sr-only">Date du créneau</label>
-                    <input id={`slot-date-${i}`} type="date" value={slot.date || selectedDate} onChange={e => setSlots(prev => prev.map((s, idx) => idx === i ? { ...s, date: e.target.value } : s))} className="input-field" />
-                    <label htmlFor={`slot-time-${i}`} className="sr-only">Heure du créneau</label>
-                    <input id={`slot-time-${i}`} type="time" value={slot.heure || selectedTime} onChange={e => setSlots(prev => prev.map((s, idx) => idx === i ? { ...s, heure: e.target.value } : s))} className="input-field" />
-                    <div className="flex items-center justify-between gap-2">
-                      <label htmlFor={`slot-duration-${i}`} className="text-xs text-slate-400">Durée</label>
-                      <input id={`slot-duration-${i}`} type="number" min={5} step={5} value={slot.durée ?? slotDuration} onChange={e => setSlots(prev => prev.map((s, idx) => idx === i ? { ...s, durée: Number(e.target.value) } : s))} className="input-field w-24" />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <input type="number" min={0} value={slot.scoreA ?? ''} placeholder="Score A" onChange={e => setSlots(prev => prev.map((s, idx) => idx === i ? { ...s, scoreA: e.target.value } : s))} className="input-field" />
-                      <input type="number" min={0} value={slot.scoreB ?? ''} placeholder="Score B" onChange={e => setSlots(prev => prev.map((s, idx) => idx === i ? { ...s, scoreB: e.target.value } : s))} className="input-field" />
-                    </div>
-                  </div>
-                  <div className="text-xs text-slate-400">Durée totale du match</div>
-                  {slot.scoreA !== '' && slot.scoreB !== '' && (
-                    <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
-                      Match avec score — sera enregistré comme terminé
-                    </div>
-                  )}
-
-                  <div className="mt-2 w-full h-10 rounded-lg overflow-hidden bg-slate-gradient-dark">
-                    <div className="flex h-full">
-                      <div className="flex-1 flex items-center justify-center text-xs font-semibold text-white border-r-soft">{(équipes.find(t => t.id === slot.teamA) || {}).nom || '—'}</div>
-                      <div className="flex-1 flex items-center justify-center text-xs font-semibold text-white">{(équipes.find(t => t.id === slot.teamB) || {}).nom || '—'}</div>
-                    </div>
-                  </div>
+                
+                <div>
+                  <label htmlFor="scheduler-time" className="block text-xs font-semibold text-muted mb-2 flex items-center gap-2">
+                    <Clock className="w-3.5 h-3.5" /> Heure par défaut
+                  </label>
+                  <input 
+                    id="scheduler-time" 
+                    type="time" 
+                    value={selectedTime} 
+                    onChange={e => setSelectedTime(e.target.value)} 
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-800/50 border border-slate-700 text-primary focus:border-accent-strong focus:ring-2 focus:ring-accent-strong/20 transition-all outline-none" 
+                  />
                 </div>
-                <div className="col-span-1" onDragOver={allowDrop} onDrop={e => onDropToSlot(i, 'B', e)}>
-                  <div className="text-xs text-slate-400 mb-1 text-right">Équipe B</div>
-                  {slot.teamB ? (
-                    <div className="flex items-center gap-2 justify-end p-2 bg-white/5 rounded">
-                      <div className="font-medium">{(équipes.find(t => t.id === slot.teamB) || {}).nom}</div>
-                      <ImageWithFallback src={(équipes.find(t => t.id === slot.teamB) || {}).logo || ''} alt="" className="w-6 h-6 rounded-full" />
-                    </div>
-                  ) : (
-                    <div className="p-3 rounded bg-transparent border-dashed text-slate-400 text-right">Glisser une équipe ici</div>
-                  )}
+                
+                <div>
+                  <label htmlFor="scheduler-slot-count" className="block text-xs font-semibold text-muted mb-2 flex items-center gap-2">
+                    <Plus className="w-3.5 h-3.5" /> Nb créneaux
+                  </label>
+                  <input 
+                    id="scheduler-slot-count" 
+                    type="number" 
+                    min={1} 
+                    max={24} 
+                    value={slotCount} 
+                    onChange={e => {
+                      const v = Math.max(1, Math.min(24, Number(e.target.value) || 1));
+                      setSlotCount(v);
+                      setSlots(prev => {
+                        const next = Array.from({ length: v }).map((_, i) =>
+                          prev[i]
+                            ? { ...prev[i] }
+                            : { teamA: '', teamB: '', date: selectedDate, heure: selectedTime, durée: slotDuration, scoreA: '', scoreB: '' }
+                        );
+                        return next;
+                      });
+                    }} 
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-800/50 border border-slate-700 text-primary focus:border-accent-strong focus:ring-2 focus:ring-accent-strong/20 transition-all outline-none" 
+                  />
                 </div>
-                <div className="col-span-3 mt-3 flex flex-col gap-3 md:flex-row justify-between items-center">
-                  <div className="text-sm text-slate-400">{slot.scoreA !== '' && slot.scoreB !== '' ? `Score proposé: ${slot.scoreA} - ${slot.scoreB}` : 'Scores à définir'}</div>
-                  <div className="flex gap-3">
-                    <button className="btn-secondary" onClick={() => clearSlot(i)}>Vider</button>
-                    <button className="btn-primary" disabled={!slot.teamA || !slot.teamB} onClick={() => handleCreateMatch(i)}>Créer le match</button>
-                  </div>
+                
+                <div>
+                  <label htmlFor="scheduler-slot-duration" className="block text-xs font-semibold text-muted mb-2 flex items-center gap-2">
+                    <Clock className="w-3.5 h-3.5" /> Durée (min)
+                  </label>
+                  <input 
+                    id="scheduler-slot-duration" 
+                    type="number" 
+                    min={5} 
+                    step={5} 
+                    value={slotDuration} 
+                    onChange={e => setSlotDuration(Number(e.target.value) || 25)} 
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-800/50 border border-slate-700 text-primary focus:border-accent-strong focus:ring-2 focus:ring-accent-strong/20 transition-all outline-none" 
+                  />
                 </div>
               </div>
-            ))}
+              
+              {/* Actions globales */}
+              <div className="flex flex-wrap gap-3">
+                <button 
+                  className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold bg-gradient-to-r from-accent-strong to-accent-medium text-white hover:shadow-lg hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={batchCreateFilledSlots}
+                  disabled={filledSlotsCount === 0 || Object.keys(errors).length > 0}
+                >
+                  <Zap className="w-4 h-4" /> Créer tous les matchs ({filledSlotsCount})
+                </button>
+                <button 
+                  className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold bg-slate-800/50 border border-slate-700 text-primary hover:bg-slate-700/50 hover:border-accent-strong/30 transition-all"
+                  onClick={exportCSV}
+                >
+                  <Download className="w-4 h-4" /> Exporter CSV
+                </button>
+              </div>
+              
+              {Object.keys(errors).length > 0 && (
+                <div className="mt-4 p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-red-300">Conflits détectés</p>
+                    <p className="text-xs text-red-200/70 mt-1">Une ou plusieurs équipes sont programmées dans plusieurs créneaux simultanément.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Liste des créneaux */}
+            <div className="space-y-4">
+              {slots.map((slot, i) => {
+                const hasError = errors[i];
+                const teamAData = équipes.find(t => t.id === slot.teamA);
+                const teamBData = équipes.find(t => t.id === slot.teamB);
+                const isComplete = slot.teamA && slot.teamB;
+                
+                return (
+                  <div 
+                    key={i} 
+                    className={`glass p-5 rounded-3xl border transition-all ${
+                      hasError 
+                        ? 'border-red-500/50 bg-red-500/5' 
+                        : isComplete 
+                        ? 'border-emerald-500/30 bg-emerald-500/5' 
+                        : 'border-panel'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-strong to-accent-medium flex items-center justify-center font-black text-white">
+                          {i + 1}
+                        </div>
+                        {isComplete && (
+                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                            <CheckCircle className="w-4 h-4 text-emerald-400" />
+                            <span className="text-xs font-semibold text-emerald-300">Prêt</span>
+                          </div>
+                        )}
+                        {hasError && (
+                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/20">
+                            <AlertCircle className="w-4 h-4 text-red-400" />
+                            <span className="text-xs font-semibold text-red-300">Conflit</span>
+                          </div>
+                        )}
+                      </div>
+                      <button 
+                        onClick={() => clearSlot(i)} 
+                        className="p-2 rounded-xl bg-slate-800/50 border border-slate-700 hover:bg-red-500/10 hover:border-red-500/30 transition-all group"
+                      >
+                        <Trash2 className="w-4 h-4 text-slate-400 group-hover:text-red-400 transition-colors" />
+                      </button>
+                    </div>
+
+                    <div className="grid lg:grid-cols-5 gap-4 items-center">
+                      
+                      {/* Zone Équipe A */}
+                      <div 
+                        className="lg:col-span-2"
+                        onDragOver={allowDrop} 
+                        onDrop={e => onDropToSlot(i, 'A', e)}
+                      >
+                        {slot.teamA && teamAData ? (
+                          <div className="p-4 rounded-2xl bg-slate-800/30 border border-slate-700 flex items-center gap-3 hover:border-accent-strong/30 transition-all">
+                            <ImageWithFallback 
+                              src={teamAData.logo || ''} 
+                              alt={teamAData.nom} 
+                              className="w-12 h-12 rounded-full ring-2 ring-slate-700" 
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="font-bold text-primary truncate">{teamAData.nom}</div>
+                              <div className="text-xs text-muted">{teamAData.classe}</div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-6 rounded-2xl border-2 border-dashed border-slate-700 bg-slate-800/20 flex flex-col items-center justify-center text-center hover:border-accent-strong/30 hover:bg-slate-800/40 transition-all min-h-[100px]">
+                            <Shield className="w-6 h-6 text-slate-600 mb-2" />
+                            <div className="text-xs text-muted font-medium">Glissez l'équipe A ici</div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Zone centrale - Infos match */}
+                      <div className="lg:col-span-1 space-y-3">
+                        <input 
+                          id={`slot-date-${i}`}
+                          type="date" 
+                          min={aujourd_hui()} 
+                          value={slot.date || selectedDate} 
+                          onChange={e => setSlots(prev => prev.map((s, idx) => idx === i ? { ...s, date: e.target.value } : s))} 
+                          className="w-full px-3 py-2 rounded-xl bg-slate-800/50 border border-slate-700 text-xs text-primary focus:border-accent-strong transition-all outline-none" 
+                        />
+                        <input 
+                          id={`slot-time-${i}`}
+                          type="time" 
+                          value={slot.heure || selectedTime} 
+                          onChange={e => setSlots(prev => prev.map((s, idx) => idx === i ? { ...s, heure: e.target.value } : s))} 
+                          className="w-full px-3 py-2 rounded-xl bg-slate-800/50 border border-slate-700 text-xs text-primary focus:border-accent-strong transition-all outline-none" 
+                        />
+                        <input 
+                          id={`slot-duration-${i}`}
+                          type="number" 
+                          min={5} 
+                          step={5} 
+                          value={slot.durée ?? slotDuration} 
+                          onChange={e => setSlots(prev => prev.map((s, idx) => idx === i ? { ...s, durée: Number(e.target.value) } : s))} 
+                          className="w-full px-3 py-2 rounded-xl bg-slate-800/50 border border-slate-700 text-xs text-primary focus:border-accent-strong transition-all outline-none"
+                          placeholder="Durée min"
+                        />
+                        
+                        {/* Scores */}
+                        <div className="flex gap-2">
+                          <input 
+                            type="number" 
+                            min={0} 
+                            value={slot.scoreA ?? ''} 
+                            placeholder="0" 
+                            onChange={e => setSlots(prev => prev.map((s, idx) => idx === i ? { ...s, scoreA: e.target.value } : s))} 
+                            className="w-full px-3 py-2 rounded-xl bg-slate-800/50 border border-slate-700 text-center font-bold text-primary focus:border-accent-strong transition-all outline-none" 
+                          />
+                          <div className="flex items-center justify-center text-muted font-bold">-</div>
+                          <input 
+                            type="number" 
+                            min={0} 
+                            value={slot.scoreB ?? ''} 
+                            placeholder="0" 
+                            onChange={e => setSlots(prev => prev.map((s, idx) => idx === i ? { ...s, scoreB: e.target.value } : s))} 
+                            className="w-full px-3 py-2 rounded-xl bg-slate-800/50 border border-slate-700 text-center font-bold text-primary focus:border-accent-strong transition-all outline-none" 
+                          />
+                        </div>
+                        
+                        {slot.scoreA !== '' && slot.scoreB !== '' && (
+                          <div className="text-center">
+                            <div className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-blue-500/10 border border-blue-500/20">
+                              <div className="w-1.5 h-1.5 rounded-full bg-blue-400"></div>
+                              <span className="text-xs font-semibold text-blue-300">Terminé</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Zone Équipe B */}
+                      <div 
+                        className="lg:col-span-2"
+                        onDragOver={allowDrop} 
+                        onDrop={e => onDropToSlot(i, 'B', e)}
+                      >
+                        {slot.teamB && teamBData ? (
+                          <div className="p-4 rounded-2xl bg-slate-800/30 border border-slate-700 flex items-center gap-3 hover:border-accent-strong/30 transition-all">
+                            <ImageWithFallback 
+                              src={teamBData.logo || ''} 
+                              alt={teamBData.nom} 
+                              className="w-12 h-12 rounded-full ring-2 ring-slate-700" 
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="font-bold text-primary truncate">{teamBData.nom}</div>
+                              <div className="text-xs text-muted">{teamBData.classe}</div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-6 rounded-2xl border-2 border-dashed border-slate-700 bg-slate-800/20 flex flex-col items-center justify-center text-center hover:border-accent-strong/30 hover:bg-slate-800/40 transition-all min-h-[100px]">
+                            <Shield className="w-6 h-6 text-slate-600 mb-2" />
+                            <div className="text-xs text-muted font-medium">Glissez l'équipe B ici</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Action du créneau */}
+                    <div className="mt-4 flex justify-end">
+                      <button 
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold bg-gradient-to-r from-accent-strong to-accent-medium text-white hover:shadow-lg hover:scale-[1.02] transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
+                        disabled={!slot.teamA || !slot.teamB}
+                        onClick={() => handleCreateMatch(i)}
+                      >
+                        <CheckCircle className="w-4 h-4" />
+                        Créer ce match
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
