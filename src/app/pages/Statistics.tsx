@@ -1,195 +1,217 @@
 import React from 'react';
 import { useÉquipes, useTousLesJoueurs, useMatchs } from '../hooks/useSupabase';
-import { BarChart3, Goal, UserCheck, Trophy, TrendingUp } from 'lucide-react';
+import { BarChart3, Goal, UserCheck, Trophy, TrendingUp, Zap, Star } from 'lucide-react';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 
 export const Statistics = () => {
-  const { joueurs, chargement: chargementJoueurs } = useTousLesJoueurs();
+  const { joueurs, chargement: chJ } = useTousLesJoueurs();
   const { équipes } = useÉquipes();
-  const { matchs, chargement: chargementMatchs } = useMatchs();
+  const { matchs, chargement: chM } = useMatchs();
 
-  const chargement = chargementJoueurs || chargementMatchs;
-  if (chargement) {
-    return <div className="p-8 text-slate-500">Chargement des statistiques...</div>;
+  if (chJ || chM) {
+    return (
+      <div className="flex items-center justify-center h-full py-24">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-accent-strong" />
+      </div>
+    );
   }
 
-  const playedMatches = matchs.filter(m => m.score_a !== null && m.score_b !== null);
-  const totalGoals = playedMatches.reduce((sum, m) => sum + (m.score_a ?? 0) + (m.score_b ?? 0), 0);
-  const averageGoals = playedMatches.length ? (totalGoals / playedMatches.length).toFixed(1) : '0.0';
-  const totalMatches = matchs.length;
-  const totalTeams = équipes.length;
-  const totalPlayers = joueurs.length;
+  const played = matchs.filter(m => m.score_a !== null && m.score_b !== null);
+  const totalGoals = played.reduce((s, m) => s + (m.score_a ?? 0) + (m.score_b ?? 0), 0);
+  const avgGoals = played.length ? (totalGoals / played.length).toFixed(1) : '0.0';
 
-  const playerPoints = joueurs.map(player => ({
-    ...player,
-    points: player.buts * 2 + player.passes_décisives,
-  }));
-
+  const playerPoints = joueurs.map(p => ({ ...p, pts: p.buts * 2 + p.passes_décisives }));
   const topScorers = [...joueurs].sort((a, b) => b.buts - a.buts).filter(p => p.buts > 0).slice(0, 10);
   const topAssists = [...joueurs].sort((a, b) => b.passes_décisives - a.passes_décisives).filter(p => p.passes_décisives > 0).slice(0, 10);
-  const mvpList = [...playerPoints].sort((a, b) => b.points - a.points).slice(0, 3);
+  const mvpList = [...playerPoints].sort((a, b) => b.pts - a.pts).slice(0, 3);
 
   const teamStats = équipes.map(team => {
-    const teamMatches = playedMatches.filter(m => m.équipe_a_id === team.id || m.équipe_b_id === team.id);
-    const stats = teamMatches.reduce(
-      (acc, match) => {
-        const isHome = match.équipe_a_id === team.id;
-        const goalsFor = isHome ? (match.score_a ?? 0) : (match.score_b ?? 0);
-        const goalsAgainst = isHome ? (match.score_b ?? 0) : (match.score_a ?? 0);
-        const win = goalsFor > goalsAgainst ? 1 : 0;
-        const draw = goalsFor === goalsAgainst ? 1 : 0;
-        const loss = goalsFor < goalsAgainst ? 1 : 0;
-        return {
-          played: acc.played + 1,
-          wins: acc.wins + win,
-          draws: acc.draws + draw,
-          losses: acc.losses + loss,
-          goalsFor: acc.goalsFor + goalsFor,
-          goalsAgainst: acc.goalsAgainst + goalsAgainst,
-        };
-      },
-      { played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0 }
-    );
-    return {
-      ...team,
-      ...stats,
-      goalDifference: stats.goalsFor - stats.goalsAgainst,
-      points: stats.wins * 3 + stats.draws,
-    };
-  });
+    const tm = played.filter(m => m.équipe_a_id === team.id || m.équipe_b_id === team.id);
+    const s = tm.reduce((acc, m) => {
+      const home = m.équipe_a_id === team.id;
+      const gF = home ? (m.score_a ?? 0) : (m.score_b ?? 0);
+      const gA = home ? (m.score_b ?? 0) : (m.score_a ?? 0);
+      return { played: acc.played + 1, wins: acc.wins + (gF > gA ? 1 : 0), draws: acc.draws + (gF === gA ? 1 : 0), losses: acc.losses + (gF < gA ? 1 : 0), gF: acc.gF + gF, gA: acc.gA + gA };
+    }, { played: 0, wins: 0, draws: 0, losses: 0, gF: 0, gA: 0 });
+    return { ...team, ...s, diff: s.gF - s.gA, points: s.wins * 3 + s.draws };
+  }).sort((a, b) => b.points - a.points || b.diff - a.diff).slice(0, 5);
 
-  const topTeams = [...teamStats].sort((a, b) => b.points - a.points || b.goalDifference - a.goalDifference).slice(0, 5);
+  const kpis = [
+    { label: 'Joueurs inscrits', value: joueurs.length, icon: UserCheck, color: 'stat-blue', textColor: 'text-blue-400' },
+    { label: 'Équipes en course', value: équipes.length, icon: Trophy, color: 'stat-green', textColor: 'text-accent-strong' },
+    { label: 'Matchs programmés', value: matchs.length, icon: TrendingUp, color: 'stat-purple', textColor: 'text-purple-400' },
+    { label: 'Buts marqués', value: totalGoals, icon: Goal, color: 'stat-gold', textColor: 'text-amber-400' },
+  ];
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-3">
-          <BarChart3 className="w-8 h-8 text-indigo-500" />
-          Statistiques du Tournoi
-        </h1>
-        <p className="text-slate-500 mt-2">Rapport global des équipes, des meilleurs joueurs et des performances clefs.</p>
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-8 animate-slide-up">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="w-1 h-8 rounded-full bg-gradient-to-b from-blue-400 to-purple-500" />
+        <div>
+          <h1 className="text-2xl font-display font-bold flex items-center gap-3 text-primary">
+            <BarChart3 className="w-6 h-6 text-blue-400" />
+            Statistiques du Tournoi
+          </h1>
+          <p className="text-sm text-muted mt-0.5">Rapport global des performances et records.</p>
+        </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
-        {[
-          { label: 'Joueurs enregistrés', value: totalPlayers, icon: UserCheck, color: 'bg-slate-900' },
-          { label: 'Équipes en course', value: totalTeams, icon: Trophy, color: 'bg-emerald-500' },
-          { label: 'Matchs programmés', value: totalMatches, icon: TrendingUp, color: 'bg-indigo-500' },
-          { label: 'Buts marqués', value: totalGoals, icon: Goal, color: 'bg-amber-500' },
-        ].map(card => (
-          <div key={card.label} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className={`inline-flex p-3 rounded-2xl text-white ${card.color}`}><card.icon className="w-5 h-5" /></div>
-            <div className="mt-4 text-sm text-slate-500">{card.label}</div>
-            <div className="mt-2 text-3xl font-bold text-slate-900">{card.value}</div>
+      {/* KPIs */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {kpis.map(k => (
+          <div key={k.label} className={`glass card-3d p-5 rounded-2xl border-panel ${k.color}`}>
+            <div className="flex items-start justify-between mb-3">
+              <div className={`p-3 rounded-xl bg-panel-soft`}><k.icon className={`w-5 h-5 ${k.textColor}`} /></div>
+            </div>
+            <div className={`text-3xl font-display font-black mb-1 ${k.textColor}`}>{k.value}</div>
+            <p className="text-xs text-muted">{k.label}</p>
           </div>
         ))}
       </div>
 
+      {/* Moyenne buts + MVP + Perf équipes */}
       <div className="grid gap-6 lg:grid-cols-3">
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold mb-3">Meilleur du Tournoi</h2>
-          <div className="space-y-4">
-            {mvpList.map((player, idx) => {
+
+        {/* MVP */}
+        <div className="glass rounded-2xl border-panel p-6">
+          <h2 className="text-base font-display font-bold mb-4 flex items-center gap-2 text-primary">
+            <Star className="w-5 h-5 text-amber-400" /> Meilleurs du tournoi
+          </h2>
+          <div className="space-y-3">
+            {mvpList.map((player, i) => {
               const team = équipes.find(t => t.id === player.équipe_id);
+              const medals = ['🥇', '🥈', '🥉'];
               return (
-                <div key={player.id} className="flex items-center gap-3 rounded-2xl border border-slate-100 p-3">
-                  <div className="text-sm font-semibold text-slate-700">#{idx + 1}</div>
-                  <div className="flex-1">
-                    <div className="font-semibold text-slate-900">{player.nom}</div>
-                    <div className="text-xs text-slate-500">{team?.nom || 'Équipe inconnue'}</div>
+                <div key={player.id} className="flex items-center gap-3 p-3 rounded-xl bg-panel-soft">
+                  <span className="text-xl">{medals[i]}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-primary truncate">{player.nom}</div>
+                    <div className="text-xs text-muted truncate">{team?.nom}</div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-sm font-bold text-slate-900">{player.points} pts</div>
-                    <div className="text-xs text-slate-500">{player.buts} buts • {player.passes_décisives} passes</div>
+                  <div className="text-right flex-shrink-0">
+                    <div className="font-black text-accent-strong">{player.pts} pts</div>
+                    <div className="text-xs text-muted">{player.buts}B · {player.passes_décisives}P</div>
                   </div>
                 </div>
               );
             })}
+            {mvpList.length === 0 && <p className="text-sm text-muted text-center py-4">Aucune stat enregistrée.</p>}
           </div>
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold mb-3">Performance des équipes</h2>
+        {/* Perf équipes */}
+        <div className="glass rounded-2xl border-panel p-6">
+          <h2 className="text-base font-display font-bold mb-4 flex items-center gap-2 text-primary">
+            <Trophy className="w-5 h-5 text-accent-strong" /> Performance équipes
+          </h2>
           <div className="space-y-3">
-            {topTeams.map(team => (
-              <div key={team.id} className="flex items-center justify-between gap-4 rounded-2xl border border-slate-100 p-3">
-                <div className="flex items-center gap-3">
-                  <ImageWithFallback src={team.logo || ''} alt={team.nom} className="h-10 w-10 rounded-full object-cover" />
-                  <div>
-                    <div className="font-semibold text-slate-900">{team.nom}</div>
-                    <div className="text-xs text-slate-500">{team.points} pts • Diff. {team.goalDifference}</div>
-                  </div>
+            {teamStats.map((team, i) => (
+              <div key={team.id} className="flex items-center gap-3 p-3 rounded-xl bg-panel-soft">
+                <span className="text-lg font-black text-muted w-6 text-center">{i + 1}</span>
+                <ImageWithFallback src={team.logo || ''} alt={team.nom} className="w-9 h-9 rounded-full object-contain flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-primary truncate">{team.nom}</div>
+                  <div className="text-xs text-muted">{team.points} pts · Diff {team.diff > 0 ? '+' : ''}{team.diff}</div>
                 </div>
-                <div className="text-right">
-                  <div className="text-sm font-semibold text-slate-900">{team.goalsFor} - {team.goalsAgainst}</div>
-                  <div className="text-xs text-slate-500">{team.played} matchs</div>
+                <div className="text-right text-xs text-muted flex-shrink-0">
+                  <div className="font-semibold text-primary">{team.gF}-{team.gA}</div>
+                  <div>{team.played} matchs</div>
                 </div>
               </div>
             ))}
+            {teamStats.length === 0 && <p className="text-sm text-muted text-center py-4">Aucun match terminé.</p>}
           </div>
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold mb-3">Moyenne de buts</h2>
-          <div className="rounded-3xl bg-slate-50 p-6 text-center">
-            <div className="text-5xl font-black text-slate-900">{averageGoals}</div>
-            <div className="mt-2 text-sm text-slate-500">buts par match sur les rencontres jouées</div>
+        {/* Moyenne buts */}
+        <div className="glass rounded-2xl border-panel p-6 flex flex-col">
+          <h2 className="text-base font-display font-bold mb-4 flex items-center gap-2 text-primary">
+            <Zap className="w-5 h-5 text-amber-400" /> Intensité offensive
+          </h2>
+          <div className="flex-1 flex flex-col items-center justify-center gap-4">
+            <div className="relative w-32 h-32">
+              <div className="absolute inset-0 rounded-full bg-amber-500/10 border-2 border-amber-500/20 animate-pulse" />
+              <div className="absolute inset-0 flex items-center justify-center flex-col">
+                <div className="text-4xl font-black text-amber-400">{avgGoals}</div>
+                <div className="text-xs text-muted mt-1">buts/match</div>
+              </div>
+            </div>
+            <div className="text-center space-y-1">
+              <p className="text-sm text-primary font-semibold">Total: {totalGoals} buts</p>
+              <p className="text-xs text-muted">Sur {played.length} match{played.length > 1 ? 's' : ''} joué{played.length > 1 ? 's' : ''}</p>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-2">
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      {/* Top buteurs + Passeurs */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Buteurs */}
+        <div className="glass rounded-2xl border-panel p-6">
           <div className="flex items-center justify-between mb-5">
-            <div>
-              <h2 className="text-lg font-semibold">Classement des Buteurs</h2>
-              <p className="text-sm text-slate-500">Top 10 des stars du tournoi.</p>
-            </div>
-            <Goal className="h-6 w-6 text-emerald-600" />
+            <h2 className="text-base font-display font-bold flex items-center gap-2 text-primary">
+              <Goal className="w-5 h-5 text-emerald-400" /> Top Buteurs
+            </h2>
+            <span className="text-xs text-muted">Top 10</span>
           </div>
-          <div className="space-y-3">
-            {topScorers.map((player, index) => {
-              const team = équipes.find(t => t.id === player.équipe_id);
+          <div className="space-y-2">
+            {topScorers.map((p, i) => {
+              const team = équipes.find(t => t.id === p.équipe_id);
+              const pct = topScorers[0]?.buts ? (p.buts / topScorers[0].buts) * 100 : 0;
               return (
-                <div key={player.id} className="flex items-center justify-between gap-4 rounded-2xl border border-slate-100 p-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">#{index + 1}</div>
-                    <div>
-                      <div className="font-semibold text-slate-900">{player.nom}</div>
-                      <div className="text-xs text-slate-500">{team?.nom}</div>
+                <div key={p.id} className="flex items-center gap-3">
+                  <div className="w-7 text-center text-xs font-bold text-muted">{i + 1}</div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-semibold text-primary">{p.nom}</span>
+                      <span className="text-sm font-black text-emerald-400">{p.buts}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                        <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-300 transition-all" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="text-xs text-muted w-16 truncate">{team?.nom}</span>
                     </div>
                   </div>
-                  <div className="text-right font-bold text-emerald-600">{player.buts}</div>
                 </div>
               );
             })}
+            {topScorers.length === 0 && <p className="text-sm text-muted text-center py-6">Aucun but enregistré.</p>}
           </div>
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        {/* Passeurs */}
+        <div className="glass rounded-2xl border-panel p-6">
           <div className="flex items-center justify-between mb-5">
-            <div>
-              <h2 className="text-lg font-semibold">Passeurs décisifs</h2>
-              <p className="text-sm text-slate-500">Top 10 des architectes de jeu.</p>
-            </div>
-            <UserCheck className="h-6 w-6 text-blue-600" />
+            <h2 className="text-base font-display font-bold flex items-center gap-2 text-primary">
+              <UserCheck className="w-5 h-5 text-blue-400" /> Top Passeurs
+            </h2>
+            <span className="text-xs text-muted">Top 10</span>
           </div>
-          <div className="space-y-3">
-            {topAssists.map((player, index) => {
-              const team = équipes.find(t => t.id === player.équipe_id);
+          <div className="space-y-2">
+            {topAssists.map((p, i) => {
+              const team = équipes.find(t => t.id === p.équipe_id);
+              const pct = topAssists[0]?.passes_décisives ? (p.passes_décisives / topAssists[0].passes_décisives) * 100 : 0;
               return (
-                <div key={player.id} className="flex items-center justify-between gap-4 rounded-2xl border border-slate-100 p-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">#{index + 1}</div>
-                    <div>
-                      <div className="font-semibold text-slate-900">{player.nom}</div>
-                      <div className="text-xs text-slate-500">{team?.nom}</div>
+                <div key={p.id} className="flex items-center gap-3">
+                  <div className="w-7 text-center text-xs font-bold text-muted">{i + 1}</div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-semibold text-primary">{p.nom}</span>
+                      <span className="text-sm font-black text-blue-400">{p.passes_décisives}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                        <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-300 transition-all" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="text-xs text-muted w-16 truncate">{team?.nom}</span>
                     </div>
                   </div>
-                  <div className="text-right font-bold text-blue-600">{player.passes_décisives}</div>
                 </div>
               );
             })}
+            {topAssists.length === 0 && <p className="text-sm text-muted text-center py-6">Aucune passe enregistrée.</p>}
           </div>
         </div>
       </div>

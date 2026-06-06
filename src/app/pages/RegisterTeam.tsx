@@ -1,173 +1,83 @@
 import React, { useState, useEffect } from 'react';
-import { UserPlus, ShieldCheck, CheckCircle, Loader2 } from 'lucide-react';
+import { UserPlus, ShieldCheck, CheckCircle, Loader2, Plus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { créerÉquipe } from '../services/équipesService';
 import { créerJoueur } from '../services/joueursService';
 import { clientSupabase } from '../config/supabase';
 
-interface PlayerForm {
-  nom: string;
-  numéro: string;
-  poste: string;
-}
+interface PlayerForm { nom: string; numéro: string; poste: string; }
 
 export const RegisterTeam = () => {
   const { user } = useAuth();
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
-  
   const [teamName, setTeamName] = useState('');
   const [teamClass, setTeamClass] = useState(user?.class_name || 'P1');
-  
-  const [players, setPlayers] = useState<PlayerForm[]>(
-    Array(7).fill({ nom: '', numéro: '', poste: '' })
-  );
+  const [players, setPlayers] = useState<PlayerForm[]>(Array(7).fill({ nom: '', numéro: '', poste: '' }));
 
   useEffect(() => {
     if (user?.team_id) {
-      const loadTeam = async () => {
-        try {
-          const { data, error } = await clientSupabase
-            .from('équipes')
-            .select('*')
-            .eq('id', user.team_id)
-            .single();
-          if (data) {
-            setTeamName(data.nom);
-            setTeamClass(data.classe);
-          }
-        } catch (err) {
-          console.error("Erreur chargement équipe :", err);
-        }
-      };
-      loadTeam();
+      clientSupabase.from('équipes').select('*').eq('id', user.team_id).single().then(({ data }) => {
+        if (data) { setTeamName(data.nom); setTeamClass(data.classe); }
+      });
     }
   }, [user?.team_id]);
 
   if (user?.role !== 'captain') {
     return (
-      <div className="p-8 max-w-3xl mx-auto mt-12">
-        <div className="bg-white rounded-3xl shadow-lg border border-slate-200 p-10 text-center">
-          <h1 className="text-3xl font-bold text-slate-900 mb-4">Accès restreint</h1>
-          <p className="text-slate-600">L’inscription d’équipe est réservée aux capitaines.</p>
+      <div className="p-8 max-w-3xl mx-auto flex items-center justify-center min-h-64">
+        <div className="glass rounded-3xl p-10 text-center border-panel max-w-md w-full">
+          <ShieldCheck className="w-12 h-12 mx-auto mb-4 text-muted opacity-50" />
+          <h1 className="text-2xl font-display font-bold text-primary mb-3">Accès restreint</h1>
+          <p className="text-muted">L'inscription d'équipe est réservée aux capitaines.</p>
         </div>
       </div>
     );
   }
 
-  const handlePlayerChange = (index: number, field: keyof PlayerForm, value: string) => {
-    const newPlayers = [...players];
-    newPlayers[index] = { ...newPlayers[index], [field]: value };
-    setPlayers(newPlayers);
+  const handlePlayerChange = (i: number, field: keyof PlayerForm, value: string) => {
+    const next = [...players]; next[i] = { ...next[i], [field]: value }; setPlayers(next);
   };
 
-  const addPlayer = () => {
-    if (players.length < 10) {
-      setPlayers([...players, { nom: '', numéro: '', poste: '' }]);
-    }
-  };
+  const addPlayer = () => { if (players.length < 10) setPlayers([...players, { nom: '', numéro: '', poste: '' }]); };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    
-    if (!navigator.onLine) {
-      setError("Impossible de créer l'équipe : vérifiez votre connexion internet.");
-      return;
-    }
-
-    // Validation
-    if (!teamName.trim()) {
-      setError("Le nom de l'équipe est requis.");
-      return;
-    }
-    
-    const validPlayers = players.filter(p => p.nom.trim());
-    if (validPlayers.length < 7) {
-      setError("Vous devez inscrire au moins 7 joueurs (5 titulaires + 2 remplaçants).");
-      return;
-    }
-    
-    for (const player of validPlayers) {
-      if (!player.nom || !player.numéro || !player.poste) {
-        setError(`Veuillez remplir toutes les informations pour le joueur ${player.nom || 'sans nom'}.`);
-        return;
-      }
-    }
-
+    e.preventDefault(); setError('');
+    if (!navigator.onLine) { setError("Vérifiez votre connexion internet."); return; }
+    if (!teamName.trim()) { setError("Le nom de l'équipe est requis."); return; }
+    const valid = players.filter(p => p.nom.trim());
+    if (valid.length < 7) { setError("Inscrivez au moins 7 joueurs (5 titulaires + 2 remplaçants)."); return; }
+    for (const p of valid) { if (!p.nom || !p.numéro || !p.poste) { setError(`Complétez toutes les infos pour ${p.nom || 'ce joueur'}.`); return; } }
     setIsSubmitting(true);
-
     try {
-      let currentTeamId = user?.team_id;
-
-      if (!currentTeamId) {
-        // Créer l'équipe
-        const generatedCode = `${teamClass}-${Date.now().toString(36).toUpperCase()}`;
-        const equipe = await créerÉquipe({
-          nom: teamName,
-          classe: teamClass,
-          écusson_id: '1', // Default
-          description: 'Équipe inscrite via le formulaire',
-          code_acces: generatedCode
-        });
-
-        if (!equipe) throw new Error("Erreur lors de la création de l'équipe.");
-        currentTeamId = equipe.id;
-
-        // Mettre à jour le profil du capitaine avec le team_id
+      let teamId = user?.team_id;
+      if (!teamId) {
+        const code = `${teamClass}-${Date.now().toString(36).toUpperCase()}`;
+        const équipe = await créerÉquipe({ nom: teamName, classe: teamClass, écusson_id: '1', description: 'Équipe inscrite', code_acces: code });
+        if (!équipe) throw new Error("Erreur lors de la création de l'équipe.");
+        teamId = équipe.id;
         if (user?.id) {
-          await clientSupabase
-            .from('profiles')
-            .update({ team_id: equipe.id })
-            .eq('id', user.id);
+          await clientSupabase.from('profiles').update({ team_id: équipe.id }).eq('id', user.id);
+          await clientSupabase.from('équipes').update({ capitaine_id: user.id }).eq('id', équipe.id);
         }
-
-        // Mettre à jour l'équipe pour définir le capitaine
-        await clientSupabase
-          .from('équipes')
-          .update({ capitaine_id: user?.id })
-          .eq('id', equipe.id);
       }
-
-      // Créer les joueurs
-      const playersPromises = validPlayers.map(player => 
-        créerJoueur({
-          nom: player.nom,
-          numéro: parseInt(player.numéro, 10),
-          poste: player.poste,
-          équipe_id: currentTeamId
-        })
-      );
-
-      await Promise.all(playersPromises);
-
+      await Promise.all(valid.map(p => créerJoueur({ nom: p.nom, numéro: parseInt(p.numéro, 10), poste: p.poste, équipe_id: teamId })));
       setIsSubmitted(true);
     } catch (err: any) {
-      const message = err?.message || '';
-      if (message.includes('Failed to fetch')) {
-        setError(
-          "Impossible de joindre Supabase. Vérifiez les variables d'environnement VITE_SUPABASE_URL et VITE_SUPABASE_ANON_KEY, puis actualisez la page."
-        );
-      } else {
-        setError(message || "Une erreur est survenue lors de l'inscription.");
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
+      const msg = err?.message || '';
+      setError(msg.includes('Failed to fetch') ? "Impossible de joindre le serveur. Vérifiez les variables d'environnement." : msg || "Erreur lors de l'inscription.");
+    } finally { setIsSubmitting(false); }
   };
 
   if (isSubmitted) {
     return (
-      <div className="p-8 max-w-2xl mx-auto mt-12">
-        <div className="bg-emerald-50 text-emerald-800 p-8 rounded-2xl flex flex-col items-center text-center gap-4 border border-emerald-100 shadow-sm">
-          <CheckCircle className="w-16 h-16 text-emerald-500" />
-          <h2 className="text-2xl font-bold">Équipe inscrite avec succès !</h2>
-          <p className="text-emerald-700 mt-2">Votre demande a été envoyée aux organisateurs (BDE) pour validation. Vous recevrez une notification une fois l'équipe approuvée.</p>
-          <button 
-            onClick={() => window.location.href = "/"}
-            className="mt-6 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-lg font-medium transition-colors"
-          >
+      <div className="p-8 max-w-2xl mx-auto flex items-center justify-center min-h-64">
+        <div className="glass rounded-3xl p-8 sm:p-12 text-center border border-emerald-500/30 bg-emerald-500/5 w-full animate-slide-up">
+          <CheckCircle className="w-16 h-16 text-emerald-400 mx-auto mb-4" />
+          <h2 className="text-2xl font-display font-bold text-primary mb-3">Équipe inscrite !</h2>
+          <p className="text-muted">Votre inscription a été transmise aux organisateurs. Vous serez notifié après validation.</p>
+          <button onClick={() => window.location.href = '/'} className="mt-8 btn-primary max-w-xs mx-auto">
             Retour au tableau de bord
           </button>
         </div>
@@ -176,134 +86,91 @@ export const RegisterTeam = () => {
   }
 
   return (
-    <div className="p-8 max-w-3xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-3">
-          <UserPlus className="w-8 h-8 text-blue-500" />
-          Inscrire une équipe
-        </h1>
-        <p className="text-slate-500 mt-2">En tant que capitaine, remplissez ce formulaire pour inscrire votre classe au tournoi.</p>
+    <div className="p-4 sm:p-6 lg:p-8 max-w-3xl mx-auto space-y-8 animate-slide-up">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="w-1 h-8 rounded-full bg-gradient-to-b from-accent-strong to-emerald-300" />
+        <div>
+          <h1 className="text-2xl font-display font-bold flex items-center gap-2 text-primary">
+            <UserPlus className="w-6 h-6 text-accent-strong" /> Inscrire une équipe
+          </h1>
+          <p className="text-sm text-muted mt-0.5">Remplissez ce formulaire en tant que capitaine pour inscrire votre classe.</p>
+        </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 sm:p-8">
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 text-red-600 rounded-lg border border-red-200">
-            {error}
+      {error && (
+        <div className="p-4 rounded-xl alert-error flex items-start gap-3 animate-slide-up">
+          <span className="text-lg flex-shrink-0">⚠️</span>
+          <p className="text-sm">{error}</p>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Infos équipe */}
+        <div className="glass rounded-2xl border-panel p-6">
+          <h2 className="text-base font-display font-bold text-primary mb-5 flex items-center gap-2 pb-4 border-b border-panel">
+            <ShieldCheck className="w-5 h-5 text-accent-strong" /> Informations de l'équipe
+          </h2>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-2">Nom de l'équipe</label>
+              <input required type="text" value={teamName} onChange={e => setTeamName(e.target.value)} disabled={!!user?.team_id}
+                className="input-field pl-3" placeholder="Ex: Les Lions de P1" />
+            </div>
+            <div>
+              <label htmlFor="reg-class" className="block text-xs font-semibold uppercase tracking-wider text-muted mb-2">Classe</label>
+              <select id="reg-class" required value={teamClass} onChange={e => setTeamClass(e.target.value)} disabled={!!user?.team_id} className="select-field">
+                {['P1','P2','ING1','ING2','ING3'].map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="sm:col-span-2">
+              <label htmlFor="captain-name" className="block text-xs font-semibold uppercase tracking-wider text-muted mb-2">Capitaine</label>
+              <input id="captain-name" disabled type="text" value={user?.full_name || user?.username || 'Non défini'} className="input-field pl-3 opacity-60 cursor-not-allowed" />
+            </div>
           </div>
-        )}
-        
-        <form onSubmit={handleSubmit} className="space-y-8">
-          
-          {/* Team Info */}
-          <section>
-            <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2 border-b border-slate-100 pb-2">
-              <ShieldCheck className="w-5 h-5 text-slate-400" />
-              Informations de l'équipe
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Nom de l'équipe</label>
-                <input 
-                  required 
-                  type="text" 
-                  value={teamName}
-                  onChange={e => setTeamName(e.target.value)}
-                  disabled={!!user?.team_id}
-                  className="w-full rounded-lg border border-slate-300 bg-slate-50 text-slate-900 placeholder:text-slate-500 px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none disabled:bg-slate-50 disabled:text-slate-500" 
-                  placeholder="Ex: Les Lions de P1" 
-                />
-              </div>
-              <div>
-                <label htmlFor="team-class" className="block text-sm font-medium text-slate-700 mb-1">Classe</label>
-                <select 
-                  id="team-class"
-                  required 
-                  value={teamClass}
-                  onChange={e => setTeamClass(e.target.value)}
-                  disabled={!!user?.team_id}
-                  className="w-full rounded-lg border border-slate-300 bg-slate-50 text-slate-900 placeholder:text-slate-500 px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none disabled:bg-slate-50 disabled:text-slate-500"
-                >
-                  <option value="P1">P1</option>
-                  <option value="P2">P2</option>
-                  <option value="ING1">ING1</option>
-                  <option value="ING2">ING2</option>
-                  <option value="ING3">ING3</option>
+        </div>
+
+        {/* Effectif */}
+        <div className="glass rounded-2xl border-panel p-6">
+          <h2 className="text-base font-display font-bold text-primary mb-5 flex items-center gap-2 pb-4 border-b border-panel">
+            <UserPlus className="w-5 h-5 text-blue-400" /> Effectif
+            <span className="text-xs font-normal text-muted ml-1">(5 titulaires + min. 2 remplaçants)</span>
+          </h2>
+          <div className="space-y-3">
+            {players.map((player, i) => (
+              <div key={i} className="flex gap-3 items-center p-3 rounded-xl bg-panel-soft">
+                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-accent-strong/30 to-accent-strong/10 border border-accent-strong/20 flex items-center justify-center text-xs font-bold text-accent-strong flex-shrink-0">
+                  {i + 1}
+                </div>
+                <input type="text" required={i < 7} value={player.nom} onChange={e => handlePlayerChange(i, 'nom', e.target.value)} placeholder="Nom du joueur"
+                  className="flex-1 px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-sm text-primary focus:border-accent-strong outline-none transition-all" />
+                <input type="number" required={i < 7} value={player.numéro} onChange={e => handlePlayerChange(i, 'numéro', e.target.value)} placeholder="N°"
+                  className="w-16 px-2 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-sm text-primary focus:border-accent-strong outline-none transition-all text-center" />
+                <select required={i < 7} aria-label={`Poste joueur ${i + 1}`} value={player.poste} onChange={e => handlePlayerChange(i, 'poste', e.target.value)}
+                  className="w-28 px-2 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-sm text-primary focus:border-accent-strong outline-none transition-all">
+                  <option value="">Poste</option>
+                  <option>Gardien</option>
+                  <option>Défenseur</option>
+                  <option>Milieu</option>
+                  <option>Attaquant</option>
                 </select>
               </div>
-              <div className="sm:col-span-2">
-                <label htmlFor="captain-name" className="block text-sm font-medium text-slate-700 mb-1">Capitaine</label>
-                <input id="captain-name" disabled type="text" value={user?.full_name || user?.username || "Non défini"} className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700" />
-              </div>
-            </div>
-          </section>
-
-          {/* Players Roster */}
-          <section>
-            <h2 className="text-lg font-bold text-slate-800 mb-4 border-b border-slate-100 pb-2">
-              Effectif (5 Titulaires, min. 2 Remplaçants)
-            </h2>
-            
-            <div className="space-y-4">
-              {players.map((player, i) => (
-                <div key={i} className="flex gap-4 items-center bg-slate-50 p-3 rounded-lg border border-slate-100">
-                  <div className="w-8 font-bold text-slate-400 text-right">#{i + 1}</div>
-                  <input 
-                    type="text" 
-                    required={i < 7}
-                    value={player.nom}
-                    onChange={e => handlePlayerChange(i, 'nom', e.target.value)}
-                    placeholder="Nom du joueur" 
-                    className="flex-1 rounded-md border border-slate-300 bg-slate-50 text-slate-900 placeholder:text-slate-500 px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" 
-                  />
-                  <input 
-                    type="number" 
-                    required={i < 7}
-                    value={player.numéro}
-                    onChange={e => handlePlayerChange(i, 'numéro', e.target.value)}
-                    placeholder="N°" 
-                    className="w-20 rounded-md border border-slate-300 bg-slate-50 text-slate-900 placeholder:text-slate-500 px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" 
-                  />
-                  <select 
-                    required={i < 7}
-                    aria-label={`Poste du joueur ${i + 1}`}
-                    value={player.poste}
-                    onChange={e => handlePlayerChange(i, 'poste', e.target.value)}
-                    className="w-32 rounded-md border border-slate-300 bg-slate-50 text-slate-900 px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                  >
-                    <option value="">Poste</option>
-                    <option value="Gardien">Gardien</option>
-                    <option value="Défenseur">Défenseur</option>
-                    <option value="Milieu">Milieu</option>
-                    <option value="Attaquant">Attaquant</option>
-                  </select>
-                </div>
-              ))}
-              
-              {players.length < 10 && (
-                <button 
-                  type="button" 
-                  onClick={addPlayer}
-                  className="text-sm font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1 mt-2"
-                >
-                  + Ajouter un remplaçant (Max 10 joueurs au total)
-                </button>
-              )}
-            </div>
-          </section>
-
-          <div className="flex justify-end pt-4">
-            <button 
-              type="submit" 
-              disabled={isSubmitting}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-8 py-3 rounded-lg font-bold transition-colors shadow-md hover:shadow-lg flex items-center gap-2"
-            >
-              {isSubmitting && <Loader2 className="w-5 h-5 animate-spin" />}
-              Soumettre l'inscription
-            </button>
+            ))}
           </div>
+          {players.length < 10 && (
+            <button type="button" onClick={addPlayer} className="mt-4 flex items-center gap-2 text-sm font-semibold text-accent-strong hover:text-accent-medium transition-colors">
+              <Plus className="w-4 h-4" /> Ajouter un remplaçant (max 10)
+            </button>
+          )}
+        </div>
 
-        </form>
-      </div>
+        <div className="flex justify-end">
+          <button type="submit" disabled={isSubmitting} className="btn-primary max-w-xs">
+            {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+            {isSubmitting ? 'Envoi en cours...' : "Soumettre l'inscription"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 };
