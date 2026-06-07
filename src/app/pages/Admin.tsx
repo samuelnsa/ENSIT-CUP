@@ -766,7 +766,7 @@ export const Admin = () => {
                   <span className="font-bold text-primary">{équipes.length} / 10</span>
                 </div>
                 <div className="w-full h-2.5 rounded-full bg-slate-800 overflow-hidden">
-                  <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-accent-strong transition-all" style={{ width: ${'${Math.min(équipes.length/10*100,100)}%'} }} />
+                  <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-accent-strong transition-all" style={{ width: `${Math.min(équipes.length / 10 * 100, 100)}%` }} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3 mt-4">
