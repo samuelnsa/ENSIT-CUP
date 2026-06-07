@@ -89,149 +89,147 @@ export const Statistics = () => {
 
         {/* Moyenne buts + MVP + Perf équipes */}
         <div className="grid gap-6 lg:grid-cols-3">
+          {/* MVP */}
+          <div className="glass rounded-2xl border border-amber-500/20 p-6">
+            <h2 className="text-base font-display font-bold mb-4 flex items-center gap-2 text-primary">
+              <StarSVG className="w-5 h-5 text-amber-400" /> Meilleurs du tournoi
+            </h2>
+            <div className="space-y-3">
+              {mvpList.map((player, i) => {
+                const team = équipes.find(t => t.id === player.équipe_id);
+                const medals = ['🥇', '🥈', '🥉'];
+                return (
+                  <div key={player.id} className="flex items-center gap-3 p-3 rounded-xl bg-panel-soft">
+                    <span className="text-xl">{medals[i]}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-primary truncate">{player.nom}</div>
+                      <div className="text-xs text-muted truncate">{team?.nom}</div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className="font-black text-accent-strong">{player.pts} pts</div>
+                      <div className="text-xs text-muted">{player.buts}B · {player.passes_décisives}P</div>
+                    </div>
+                  </div>
+                );
+              })}
+              {mvpList.length === 0 && <p className="text-sm text-muted text-center py-4">Aucune stat enregistrée.</p>}
+            </div>
+          </div>
 
-        {/* MVP */}
-        <div className="glass rounded-2xl border border-amber-500/20 p-6">
-          <h2 className="text-base font-display font-bold mb-4 flex items-center gap-2 text-primary">
-            <StarSVG className="w-5 h-5 text-amber-400" /> Meilleurs du tournoi
-          </h2>
-          <div className="space-y-3">
-            {mvpList.map((player, i) => {
-              const team = équipes.find(t => t.id === player.équipe_id);
-              const medals = ['🥇', '🥈', '🥉'];
-              return (
-                <div key={player.id} className="flex items-center gap-3 p-3 rounded-xl bg-panel-soft">
-                  <span className="text-xl">{medals[i]}</span>
+          {/* Perf équipes */}
+          <div className="glass rounded-2xl border border-accent-strong/20 p-6">
+            <h2 className="text-base font-display font-bold mb-4 flex items-center gap-2 text-primary">
+              <Trophy className="w-5 h-5 text-accent-strong" /> Performance équipes
+            </h2>
+            <div className="space-y-3">
+              {teamStats.map((team, i) => (
+                <div key={team.id} className="flex items-center gap-3 p-3 rounded-xl bg-panel-soft">
+                  <span className="text-lg font-black text-muted w-6 text-center">{i + 1}</span>
+                  <ImageWithFallback src={team.logo || ''} alt={team.nom} className="w-9 h-9 rounded-full object-contain flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-primary truncate">{player.nom}</div>
-                    <div className="text-xs text-muted truncate">{team?.nom}</div>
+                    <div className="font-semibold text-primary truncate">{team.nom}</div>
+                    <div className="text-xs text-muted">{team.points} pts · Diff {team.diff > 0 ? '+' : ''}{team.diff}</div>
                   </div>
-                  <div className="text-right flex-shrink-0">
-                    <div className="font-black text-accent-strong">{player.pts} pts</div>
-                    <div className="text-xs text-muted">{player.buts}B · {player.passes_décisives}P</div>
+                  <div className="text-right text-xs text-muted flex-shrink-0">
+                    <div className="font-semibold text-primary">{team.gF}-{team.gA}</div>
+                    <div>{team.played} matchs</div>
                   </div>
                 </div>
-              );
-            })}
-            {mvpList.length === 0 && <p className="text-sm text-muted text-center py-4">Aucune stat enregistrée.</p>}
-          </div>
-        </div>
-
-        {/* Perf équipes */}
-        <div className="glass rounded-2xl border border-accent-strong/20 p-6">
-          <h2 className="text-base font-display font-bold mb-4 flex items-center gap-2 text-primary">
-            <Trophy className="w-5 h-5 text-accent-strong" /> Performance équipes
-          </h2>
-          <div className="space-y-3">
-            {teamStats.map((team, i) => (
-              <div key={team.id} className="flex items-center gap-3 p-3 rounded-xl bg-panel-soft">
-                <span className="text-lg font-black text-muted w-6 text-center">{i + 1}</span>
-                <ImageWithFallback src={team.logo || ''} alt={team.nom} className="w-9 h-9 rounded-full object-contain flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-primary truncate">{team.nom}</div>
-                  <div className="text-xs text-muted">{team.points} pts · Diff {team.diff > 0 ? '+' : ''}{team.diff}</div>
-                </div>
-                <div className="text-right text-xs text-muted flex-shrink-0">
-                  <div className="font-semibold text-primary">{team.gF}-{team.gA}</div>
-                  <div>{team.played} matchs</div>
-                </div>
-              </div>
-            ))}
-            {teamStats.length === 0 && <p className="text-sm text-muted text-center py-4">Aucun match terminé.</p>}
-          </div>
-        </div>
-
-        {/* Moyenne buts */}
-        <div className="glass rounded-2xl border border-amber-500/20 p-6 flex flex-col">
-          <h2 className="text-base font-display font-bold mb-4 flex items-center gap-2 text-primary">
-            <Zap className="w-5 h-5 text-amber-400" /> Intensité offensive
-          </h2>
-          <div className="flex-1 flex flex-col items-center justify-center gap-4">
-            <div className="relative w-32 h-32">
-              <div className="absolute inset-0 rounded-full bg-amber-500/10 border-2 border-amber-500/20 animate-pulse" />
-              <div className="absolute inset-0 flex items-center justify-center flex-col">
-                <div className="text-4xl font-black text-amber-400">{avgGoals}</div>
-                <div className="text-xs text-muted mt-1">buts/match</div>
-              </div>
-            </div>
-            <div className="text-center space-y-1">
-              <p className="text-sm text-primary font-semibold">Total: {totalGoals} buts</p>
-              <p className="text-xs text-muted">Sur {played.length} match{played.length > 1 ? 's' : ''} joué{played.length > 1 ? 's' : ''}</p>
+              ))}
+              {teamStats.length === 0 && <p className="text-sm text-muted text-center py-4">Aucun match terminé.</p>}
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Top buteurs + Passeurs */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Buteurs */}
-        <div className="glass rounded-2xl border border-emerald-500/20 p-6">
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-base font-display font-bold flex items-center gap-2 text-primary">
-              <BallSVG className="w-5 h-5 text-emerald-400" /> Top Buteurs
+          {/* Moyenne buts */}
+          <div className="glass rounded-2xl border border-amber-500/20 p-6 flex flex-col">
+            <h2 className="text-base font-display font-bold mb-4 flex items-center gap-2 text-primary">
+              <Zap className="w-5 h-5 text-amber-400" /> Intensité offensive
             </h2>
-            <span className="text-xs text-muted">Top 10</span>
-          </div>
-          <div className="space-y-2">
-            {topScorers.map((p, i) => {
-              const team = équipes.find(t => t.id === p.équipe_id);
-              const pct = topScorers[0]?.buts ? (p.buts / topScorers[0].buts) * 100 : 0;
-              return (
-                <div key={p.id} className="flex items-center gap-3">
-                  <div className="w-7 text-center text-xs font-bold text-muted">{i + 1}</div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-semibold text-primary">{p.nom}</span>
-                      <span className="text-sm font-black text-emerald-400">{p.buts}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                        <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-300 transition-all" style={{ width: `${pct}%` }} />
-                      </div>
-                      <span className="text-xs text-muted w-16 truncate">{team?.nom}</span>
-                    </div>
-                  </div>
+            <div className="flex-1 flex flex-col items-center justify-center gap-4">
+              <div className="relative w-32 h-32">
+                <div className="absolute inset-0 rounded-full bg-amber-500/10 border-2 border-amber-500/20 animate-pulse" />
+                <div className="absolute inset-0 flex items-center justify-center flex-col">
+                  <div className="text-4xl font-black text-amber-400">{avgGoals}</div>
+                  <div className="text-xs text-muted mt-1">buts/match</div>
                 </div>
-              );
-            })}
-            {topScorers.length === 0 && <p className="text-sm text-muted text-center py-6">Aucun but enregistré.</p>}
+              </div>
+              <div className="text-center space-y-1">
+                <p className="text-sm text-primary font-semibold">Total: {totalGoals} buts</p>
+                <p className="text-xs text-muted">Sur {played.length} match{played.length > 1 ? 's' : ''} joué{played.length > 1 ? 's' : ''}</p>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Passeurs */}
-        <div className="glass rounded-2xl border border-blue-500/20 p-6">
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-base font-display font-bold flex items-center gap-2 text-primary">
-              <BootSVG className="w-5 h-5 text-blue-400" /> Top Passeurs
-            </h2>
-            <span className="text-xs text-muted">Top 10</span>
-          </div>
-          <div className="space-y-2">
-            {topAssists.map((p, i) => {
-              const team = équipes.find(t => t.id === p.équipe_id);
-              const pct = topAssists[0]?.passes_décisives ? (p.passes_décisives / topAssists[0].passes_décisives) * 100 : 0;
-              return (
-                <div key={p.id} className="flex items-center gap-3">
-                  <div className="w-7 text-center text-xs font-bold text-muted">{i + 1}</div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-semibold text-primary">{p.nom}</span>
-                      <span className="text-sm font-black text-blue-400">{p.passes_décisives}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                        <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-300 transition-all" style={{ width: `${pct}%` }} />
+        {/* Top buteurs + Passeurs */}
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Buteurs */}
+          <div className="glass rounded-2xl border border-emerald-500/20 p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-base font-display font-bold flex items-center gap-2 text-primary">
+                <BallSVG className="w-5 h-5 text-emerald-400" /> Top Buteurs
+              </h2>
+              <span className="text-xs text-muted">Top 10</span>
+            </div>
+            <div className="space-y-2">
+              {topScorers.map((p, i) => {
+                const team = équipes.find(t => t.id === p.équipe_id);
+                const pct = topScorers[0]?.buts ? (p.buts / topScorers[0].buts) * 100 : 0;
+                return (
+                  <div key={p.id} className="flex items-center gap-3">
+                    <div className="w-7 text-center text-xs font-bold text-muted">{i + 1}</div>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-semibold text-primary">{p.nom}</span>
+                        <span className="text-sm font-black text-emerald-400">{p.buts}</span>
                       </div>
-                      <span className="text-xs text-muted w-16 truncate">{team?.nom}</span>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                          <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-300 transition-all" style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="text-xs text-muted w-16 truncate">{team?.nom}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-            {topAssists.length === 0 && <p className="text-sm text-muted text-center py-6">Aucune passe enregistrée.</p>}
+                );
+              })}
+              {topScorers.length === 0 && <p className="text-sm text-muted text-center py-6">Aucun but enregistré.</p>}
+            </div>
           </div>
-        </div>
-      </div>
+
+          {/* Passeurs */}
+          <div className="glass rounded-2xl border border-blue-500/20 p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-base font-display font-bold flex items-center gap-2 text-primary">
+                <BootSVG className="w-5 h-5 text-blue-400" /> Top Passeurs
+              </h2>
+              <span className="text-xs text-muted">Top 10</span>
+            </div>
+            <div className="space-y-2">
+              {topAssists.map((p, i) => {
+                const team = équipes.find(t => t.id === p.équipe_id);
+                const pct = topAssists[0]?.passes_décisives ? (p.passes_décisives / topAssists[0].passes_décisives) * 100 : 0;
+                return (
+                  <div key={p.id} className="flex items-center gap-3">
+                    <div className="w-7 text-center text-xs font-bold text-muted">{i + 1}</div>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-semibold text-primary">{p.nom}</span>
+                        <span className="text-sm font-black text-blue-400">{p.passes_décisives}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                          <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-300 transition-all" style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="text-xs text-muted w-16 truncate">{team?.nom}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {topAssists.length === 0 && <p className="text-sm text-muted text-center py-6">Aucune passe enregistrée.</p>}
+            </div>
+          </div>
         </div>
       </div>
     </div>
