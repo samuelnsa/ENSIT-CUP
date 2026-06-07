@@ -1,6 +1,6 @@
 ﻿import React, { useMemo, useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { Settings, Play, Database, CheckCircle2, Users, Calendar, Eye, Trash2, Copy } from 'lucide-react';
+import { Settings, Play, Database, CheckCircle2, Users, Calendar, Eye, Trash2, Copy, Pencil, Goal, Zap, MapPin, Clock, ChevronDown, ChevronUp, Save, X, Plus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useAdminÉquipes, useMatchs, useTousLesJoueurs, invalidateCacheÉquipes } from '../hooks/useSupabase';
 import { créerÉquipe, désactiverÉquipe, supprimerÉquipe, mettreÀJourÉquipe, Équipe } from '../services/équipesService';
@@ -349,25 +349,51 @@ export const Admin = () => {
   const [formations, setFormations] = useState<Record<string, Formation | null>>({});
 
   const handleResetTournament = async () => {
-    if (confirm("Attention : cela supprimera tous les matchs ainsi que tous les buts et passes enregistrés. Voulez-vous continuer ?")) {
-      setIsDeleting(true);
-      try {
-        const { error: errorButs } = await clientSupabase.from('buts_matchs').delete();
-        if (errorButs) console.warn("Erreur suppression buts:", errorButs);
+    if (!confirm("⚠️ Attention : cela supprimera TOUS les matchs, buts et passes du tournoi.\n\nCette action est irréversible. Continuer ?")) return;
+    if (!(await ensureAdminSession())) return;
+    setIsDeleting(true);
+    try {
+      // Récupérer tous les IDs des matchs d'abord, puis les supprimer un par un
+      // (évite le DELETE sans filtre qui est bloqué par RLS Supabase)
+      const { data: allMatchs, error: fetchErr } = await clientSupabase
+        .from('matchs')
+        .select('id');
+      if (fetchErr) throw fetchErr;
 
-        const { error: errorPasses } = await clientSupabase.from('passes_matchs').delete();
-        if (errorPasses) console.warn("Erreur suppression passes:", errorPasses);
-
-        const { error: errorMatchs } = await clientSupabase.from('matchs').delete();
-        if (errorMatchs) throw errorMatchs;
-
-        await refetchMatchs();
-      } catch (err) {
-        console.error("Erreur lors de la réinitialisation :", err);
-        alert("Une erreur est survenue lors de la réinitialisation. Vérifiez la console pour plus de détails.");
-      } finally {
-        setIsDeleting(false);
+      if (!allMatchs || allMatchs.length === 0) {
+        alert('Aucun match à supprimer.');
+        return;
       }
+
+      const matchIds = allMatchs.map((m: any) => m.id);
+
+      // Supprimer buts et passes par batch d'IDs
+      const { error: errButs } = await clientSupabase
+        .from('buts_matchs')
+        .delete()
+        .in('match_id', matchIds);
+      if (errButs) console.warn('Erreur suppression buts:', errButs);
+
+      const { error: errPasses } = await clientSupabase
+        .from('passes_matchs')
+        .delete()
+        .in('match_id', matchIds);
+      if (errPasses) console.warn('Erreur suppression passes:', errPasses);
+
+      // Supprimer les matchs
+      const { error: errMatchs } = await clientSupabase
+        .from('matchs')
+        .delete()
+        .in('id', matchIds);
+      if (errMatchs) throw errMatchs;
+
+      await refetchMatchs();
+      alert(`✅ ${matchIds.length} match(s) supprimé(s) avec succès.`);
+    } catch (err: any) {
+      console.error('Erreur lors de la réinitialisation :', err);
+      alert('Erreur lors de la réinitialisation : ' + (err?.message || JSON.stringify(err)));
+    } finally {
+      setIsDeleting(false);
     }
   };
   
@@ -710,72 +736,97 @@ export const Admin = () => {
           <TabsTrigger value="matches" className="rounded-radius-lg">Matchs</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="glass card-3d p-6">
-            <h2 className="text-lg font-display font-bold mb-4 flex items-center gap-2 text-primary">
-              <Database className="w-5 h-5 text-sky-500" /> Statut des inscriptions
-            </h2>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center p-4 rounded-xl bg-panel-soft">
-                <span className="font-semibold text-muted">Équipes inscrites</span>
-                <span className="font-bold text-primary">{équipes.length} / 10</span>
+        <TabsContent value="overview" className="space-y-6">
+          {/* Stats rapides */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[
+              { label: 'Équipes', value: `${équipes.length}/10`, sub: `${Math.max(10-équipes.length,0)} places libres`, bg:'stat-blue', text:'text-blue-400', Icon: Users },
+              { label: 'À venir', value: upcomingMatches.length, sub: 'matchs planifiés', bg:'stat-purple', text:'text-purple-400', Icon: Calendar },
+              { label: 'Terminés', value: finishedMatches.length, sub: 'matchs joués', bg:'stat-green', text:'text-accent-strong', Icon: CheckCircle2 },
+              { label: 'Joueurs', value: joueurs.length, sub: 'inscrits', bg:'stat-gold', text:'text-amber-400', Icon: Users },
+            ].map(s => (
+              <div key={s.label} className={`glass card-3d p-5 rounded-2xl border-panel ${s.bg}`}>
+                <s.Icon className={`w-5 h-5 mb-3 ${s.text}`} />
+                <div className={`text-3xl font-black mb-1 ${s.text}`}>{s.value}</div>
+                <div className="text-xs font-semibold text-primary">{s.label}</div>
+                <div className="text-xs text-muted mt-0.5">{s.sub}</div>
               </div>
-              <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden">
-                <div className={`h-2.5 rounded-full bg-progress-blue ${inscribedProgressClass}`} />
-              </div>
-              <div className="pt-4 border-t border-panel text-muted space-y-2 text-sm">
-                <p>✓ Équipes confirmées : <strong className="text-primary">{équipes.length}</strong></p>
-                <p>○ Places disponibles : <strong className="text-primary">{Math.max(10 - équipes.length, 0)}</strong></p>
-              </div>
-            </div>
+            ))}
           </div>
 
-          <div className="glass card-3d p-6">
-            <h2 className="text-lg font-display font-bold mb-4 flex items-center gap-2 text-primary">
-              <Play className="w-5 h-5 text-accent-strong" /> Moteur de tournoi
-            </h2>
-              <p className="text-sm mb-4 text-muted">Le planning des rencontres se saisit manuellement dans l’onglet <strong>Matchs</strong>. Ce système est plus simple, plus stable et évite les erreurs de création automatique.</p>
-            <div className="text-xs p-3 rounded-lg mb-4 bg-panel-info">
-              ✍️ Ajoutez les matchs un à un, puis consultez-les et modifiez-les dans l’onglet <strong>Matchs</strong>.
-            </div>
-            <button onClick={() => setActiveTab('matches')} className="btn-primary w-full mb-4">
-              <Play className="w-5 h-5" /> Aller à l’onglet Matchs
-            </button>
-            {matchs.length > 0 ? (
-              <div className="flex flex-col gap-3">
-                <div className="p-4 rounded-xl flex flex-col items-center text-center gap-2 bg-panel-success">
-                  <CheckCircle2 className="w-8 h-8" />
-                  <div>
-                    <strong className="block mb-1">Le calendrier contient des matchs</strong>
-                    <span className="text-sm text-muted">Vous pouvez supprimer tous les matchs via le bouton ci-dessous.</span>
-                  </div>
+          <div className="grid lg:grid-cols-2 gap-6">
+            {/* Inscriptions */}
+            <div className="glass card-3d p-6 rounded-2xl border-panel space-y-5">
+              <h2 className="text-base font-display font-bold flex items-center gap-2 text-primary">
+                <Database className="w-5 h-5 text-blue-400" /> Statut des inscriptions
+              </h2>
+              <div>
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="text-muted">Équipes inscrites</span>
+                  <span className="font-bold text-primary">{équipes.length} / 10</span>
                 </div>
-                <button onClick={handleResetTournament} disabled={isDeleting} className="btn-secondary w-full py-2.5 text-red-400 hover:text-red-300 border-red-500/20 hover:bg-red-500/10 font-semibold btn-border-red">
-                  {isDeleting ? "Réinitialisation..." : "Réinitialiser tous les matchs"}
+                <div className="w-full h-2.5 rounded-full bg-slate-800 overflow-hidden">
+                  <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-accent-strong transition-all" style={{ width: ${'${Math.min(équipes.length/10*100,100)}%'} }} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 mt-4">
+                <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center">
+                  <div className="text-2xl font-black text-emerald-400">{équipes.length}</div>
+                  <div className="text-xs text-muted mt-1">Confirmées</div>
+                </div>
+                <div className="p-4 rounded-xl bg-slate-700/30 border border-slate-700 text-center">
+                  <div className="text-2xl font-black text-muted">{Math.max(10-équipes.length,0)}</div>
+                  <div className="text-xs text-muted mt-1">Places libres</div>
+                </div>
+              </div>
+              <button onClick={() => setActiveTab('teams')} className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-all">
+                <Users className="w-4 h-4" /> Gérer les équipes
+              </button>
+            </div>
+            <div className="glass card-3d p-6 rounded-2xl border-panel space-y-4">
+              <h2 className="text-base font-display font-bold flex items-center gap-2 text-primary">
+                <Zap className="w-5 h-5 text-accent-strong" /> Actions rapides
+              </h2>
+              <div className="space-y-3">
+                <Link to="/admin/scheduler" className="flex items-center gap-3 p-3 rounded-xl bg-panel-soft hover:bg-white/5 border border-panel hover:border-accent-strong/30 transition-all group">
+                  <div className="w-9 h-9 rounded-xl bg-accent-strong/10 border border-accent-strong/20 flex items-center justify-center flex-shrink-0"><Calendar className="w-4 h-4 text-accent-strong" /></div>
+                  <div className="flex-1 min-w-0"><p className="font-semibold text-primary text-sm">Planificateur de matchs</p><p className="text-xs text-muted">Drag and drop rapide</p></div>
+                  <ChevronDown className="w-4 h-4 text-muted -rotate-90" />
+                </Link>
+                <button onClick={() => setActiveTab('matches')} className="w-full flex items-center gap-3 p-3 rounded-xl bg-panel-soft hover:bg-white/5 border border-panel hover:border-purple-500/30 transition-all text-left">
+                  <div className="w-9 h-9 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center flex-shrink-0"><Play className="w-4 h-4 text-purple-400" /></div>
+                  <div className="flex-1 min-w-0"><p className="font-semibold text-primary text-sm">Gérer les matchs</p><p className="text-xs text-muted">{matchs.length} match{matchs.length!==1?'s':''} au total</p></div>
+                  <ChevronDown className="w-4 h-4 text-muted -rotate-90" />
+                </button>
+                <button onClick={() => setActiveTab('compositions')} className="w-full flex items-center gap-3 p-3 rounded-xl bg-panel-soft hover:bg-white/5 border border-panel hover:border-blue-500/30 transition-all text-left">
+                  <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0"><Users className="w-4 h-4 text-blue-400" /></div>
+                  <div className="flex-1 min-w-0"><p className="font-semibold text-primary text-sm">Voir les compositions</p><p className="text-xs text-muted">{joueurs.length} joueurs</p></div>
+                  <ChevronDown className="w-4 h-4 text-muted -rotate-90" />
                 </button>
               </div>
-            ) : (
-              <p className="text-xs text-center mt-2 text-muted">Aucun match créé. Allez dans l’onglet Matchs pour commencer la saisie.</p>
-            )}
+            </div>
           </div>
-
-          <div className="glass card-3d p-6 md:col-span-2">
-            <h2 className="text-lg font-display font-bold mb-4 flex items-center gap-2 text-primary">
-              <Calendar className="w-5 h-5 text-accent-strong" /> Résumé des matchs
-            </h2>
+          <div className="glass card-3d p-6 rounded-2xl border-panel">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-base font-display font-bold flex items-center gap-2 text-primary"><Calendar className="w-5 h-5 text-accent-strong" /> Résumé du calendrier</h2>
+              <button onClick={() => setActiveTab('matches')} className="text-xs font-semibold text-accent-strong hover:underline">Voir tout</button>
+            </div>
             <div className="grid grid-cols-3 gap-4">
-              <div className="p-4 rounded-xl text-center bg-panel-info">
-                <div className="text-2xl font-bold text-sky-500">{upcomingMatches.length}</div>
-                <div className="text-xs font-semibold uppercase tracking-wider mt-1 text-muted">Matchs à venir</div>
+              <div className="p-5 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-center"><div className="text-3xl font-black text-blue-400">{upcomingMatches.length}</div><div className="text-xs font-semibold text-muted mt-1 uppercase tracking-wider">À venir</div></div>
+              <div className="p-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-center"><div className="text-3xl font-black text-emerald-400">{finishedMatches.length}</div><div className="text-xs font-semibold text-muted mt-1 uppercase tracking-wider">Terminés</div></div>
+              <div className="p-5 rounded-2xl bg-panel-soft text-center"><div className="text-3xl font-black text-primary">{matchs.length}</div><div className="text-xs font-semibold text-muted mt-1 uppercase tracking-wider">Total</div></div>
+            </div>
+          </div>
+          <div className="glass rounded-2xl border border-red-500/20 bg-red-500/5 p-6">
+            <h2 className="text-base font-display font-bold flex items-center gap-2 text-red-400 mb-4"><Trash2 className="w-5 h-5" /> Zone de danger</h2>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-primary">Réinitialiser tous les matchs</p>
+                <p className="text-xs text-muted mt-1">Supprime <strong className="text-red-400">{matchs.length} match{matchs.length!==1?'s':''}</strong>, buts et passes. Les équipes ne sont pas affectées.</p>
               </div>
-              <div className="p-4 rounded-xl text-center bg-panel-success">
-                <div className="text-2xl font-bold text-accent-strong">{finishedMatches.length}</div>
-                <div className="text-xs font-semibold uppercase tracking-wider mt-1 text-muted">Matchs terminés</div>
-              </div>
-              <div className="p-4 rounded-xl text-center bg-panel-lighter">
-                <div className="text-2xl font-bold text-primary">{matchs.length}</div>
-                <div className="text-xs font-semibold uppercase tracking-wider mt-1 text-muted">Total matchs</div>
-              </div>
+              <button onClick={handleResetTournament} disabled={isDeleting || matchs.length===0} className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap flex-shrink-0">
+                {isDeleting ? <><div className="w-4 h-4 border-2 border-red-400/30 border-t-red-400 rounded-full animate-spin" /> Suppression...</> : <><Trash2 className="w-4 h-4" /> Réinitialiser le tournoi</>}
+              </button>
             </div>
           </div>
         </TabsContent>
@@ -1041,194 +1092,375 @@ export const Admin = () => {
         </TabsContent>
 
         <TabsContent value="matches">
-          <div className="space-y-6">
-            <div className="glass p-6">
-              <h2 className="text-lg font-display font-bold mb-4 flex items-center gap-2 text-primary">
-                <Calendar className="w-5 h-5 text-accent-strong" /> Tous les Matchs ({matchs.length})
-              </h2>
-              {/* Lien vers le planificateur */}
-              <div className="rounded-2xl border border-slate-700 bg-slate-950/80 p-4 flex flex-col sm:flex-row sm:items-center gap-4 mb-6">
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-primary">Planificateur drag & drop</p>
-                  <p className="text-xs text-slate-400 mt-0.5">Créez plusieurs matchs rapidement avec le planificateur visuel.</p>
+          <div className="space-y-5">
+
+            {/* Bannière planificateur */}
+            <div className="rounded-2xl overflow-hidden border border-accent-strong/20 bg-gradient-to-r from-accent-strong/10 via-emerald-500/5 to-transparent">
+              <div className="p-5 flex flex-col sm:flex-row sm:items-center gap-4">
+                <div className="flex items-center gap-4 flex-1">
+                  <div className="w-12 h-12 rounded-xl bg-accent-strong/20 border border-accent-strong/30 flex items-center justify-center flex-shrink-0">
+                    <Calendar className="w-6 h-6 text-accent-strong" />
+                  </div>
+                  <div>
+                    <p className="font-display font-bold text-primary">Planificateur drag & drop</p>
+                    <p className="text-xs text-muted mt-0.5">Créez plusieurs matchs en un clin d'œil avec le planificateur visuel.</p>
+                  </div>
                 </div>
-                <Link to="/admin/scheduler" className="btn-primary px-4 py-2 whitespace-nowrap">Ouvrir le planificateur</Link>
+                <Link
+                  to="/admin/scheduler"
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-accent-strong to-emerald-400 text-black hover:shadow-lg hover:shadow-accent-strong/20 hover:scale-[1.02] transition-all whitespace-nowrap flex-shrink-0"
+                >
+                  <Zap className="w-4 h-4" /> Ouvrir le planificateur
+                </Link>
               </div>
+            </div>
 
-              {matchs.length === 0 ? (
-                <p className="text-center py-8 text-muted">Aucun match planifié.</p>
-              ) : (
-                <div className="space-y-3">
-                  {matchs.map(match => {
-                    const teamA = équipes.find(t => t.id === match.équipe_a_id);
-                    const teamB = équipes.find(t => t.id === match.équipe_b_id);
-                    const current = matchData[match.id] ?? { score_a: match.score_a, score_b: match.score_b, statut: match.statut };
-                    const isEditing = editingMatchId === match.id;
-                    const isButeurs = buteurMatchId === match.id;
-                    const playersA = joueurs.filter(p => p.équipe_id === match.équipe_a_id);
-                    const playersB = joueurs.filter(p => p.équipe_id === match.équipe_b_id);
+            {/* En-tête section matchs */}
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-display font-bold flex items-center gap-2 text-primary">
+                <Goal className="w-5 h-5 text-accent-strong" />
+                Tous les Matchs
+                <span className="ml-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-accent-strong/10 border border-accent-strong/20 text-accent-strong">
+                  {matchs.length}
+                </span>
+              </h2>
+              <div className="flex gap-3 text-xs text-muted">
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 font-semibold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                  {matchs.filter(m => m.statut === 'à_venir').length} à venir
+                </span>
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 font-semibold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                  {matchs.filter(m => m.statut === 'en_cours').length} en cours
+                </span>
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-semibold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  {matchs.filter(m => m.statut === 'terminé').length} terminés
+                </span>
+              </div>
+            </div>
 
-                    const statutColor =
-                      match.statut === 'terminé' ? 'bg-slate-500/20 text-slate-300' :
-                      match.statut === 'en_cours' ? 'bg-green-500/20 text-green-300' :
-                      'bg-blue-500/20 text-blue-300';
+            {/* Liste des matchs */}
+            {chargementMatchs ? (
+              <div className="flex items-center justify-center py-16">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent-strong" />
+              </div>
+            ) : matchs.length === 0 ? (
+              <div className="glass rounded-2xl border-panel p-12 text-center">
+                <Calendar className="w-12 h-12 mx-auto mb-3 text-muted opacity-30" />
+                <p className="text-muted font-medium">Aucun match planifié pour l'instant.</p>
+                <p className="text-xs text-muted/60 mt-1">Utilisez le planificateur pour créer des rencontres.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {matchs.map(match => {
+                  const teamA = équipes.find(t => t.id === match.équipe_a_id);
+                  const teamB = équipes.find(t => t.id === match.équipe_b_id);
+                  const current = matchData[match.id] ?? { score_a: match.score_a, score_b: match.score_b, statut: match.statut };
+                  const isEditing = editingMatchId === match.id;
+                  const isButeurs = buteurMatchId === match.id;
+                  const playersA = joueurs.filter(p => p.équipe_id === match.équipe_a_id);
+                  const playersB = joueurs.filter(p => p.équipe_id === match.équipe_b_id);
+                  const isFinished = match.statut === 'terminé';
+                  const isLive = match.statut === 'en_cours';
 
-                    return (
-                      <div key={match.id} className="rounded-xl border bg-panel-ultra-soft border-panel overflow-hidden">
-                        {/* Header du match */}
-                        <div className="p-4">
-                          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${statutColor}`}>{match.statut}</span>
-                              <span className="text-xs text-muted">{formaterDate(match.date)} · {match.heure} · {match.lieu}</span>
-                            </div>
-                            {/* Actions */}
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <button
-                                onClick={() => handleEditMatch(match.id)}
-                                className={`py-1.5 px-3 rounded-lg text-xs font-semibold border transition-colors ${isEditing ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' : 'btn-secondary'}`}
-                              >
-                                {isEditing ? 'Fermer' : '✏️ Modifier'}
-                              </button>
-                              {match.statut === 'terminé' && (
-                                <button
-                                  onClick={() => handleOpenButeurs(match.id)}
-                                  className={`py-1.5 px-3 rounded-lg text-xs font-semibold border transition-colors ${isButeurs ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30' : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20 hover:bg-emerald-500/20'}`}
-                                >
-                                  {isButeurs ? 'Fermer stats' : '⚽ Buteurs/Passeurs'}
-                                </button>
-                              )}
-                              <button
-                                onClick={() => handleDeleteMatch(match.id)}
-                                className="py-1.5 px-3 rounded-lg text-xs font-semibold border bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20 transition-colors flex items-center gap-1"
-                              >
-                                <Trash2 className="w-3 h-3" /> Supprimer
-                              </button>
-                            </div>
+                  return (
+                    <div key={match.id} className={`rounded-2xl overflow-hidden border transition-all ${
+                      isEditing || isButeurs
+                        ? 'border-accent-strong/30 shadow-lg shadow-accent-strong/5'
+                        : isLive
+                        ? 'border-red-500/30 bg-red-500/5'
+                        : isFinished
+                        ? 'border-panel bg-panel-ultra-soft'
+                        : 'border-blue-500/20 bg-blue-500/[0.03]'
+                    }`}>
+
+                      {/* Card principale du match */}
+                      <div className="p-4 sm:p-5">
+
+                        {/* Ligne supérieure: infos + actions */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                          {/* Infos match */}
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <span className={`flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full ${
+                              isLive ? 'bg-red-500/15 text-red-400 border border-red-500/25 animate-pulse' :
+                              isFinished ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                              'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                            }`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${isLive ? 'bg-red-400 animate-ping' : isFinished ? 'bg-emerald-400' : 'bg-blue-400'}`} />
+                              {isLive ? 'En cours' : isFinished ? 'Terminé' : 'À venir'}
+                            </span>
+                            <span className="flex items-center gap-1.5 text-xs text-muted">
+                              <Calendar className="w-3 h-3" /> {formaterDate(match.date)}
+                            </span>
+                            <span className="flex items-center gap-1.5 text-xs text-muted">
+                              <Clock className="w-3 h-3" /> {match.heure}
+                            </span>
+                            {match.lieu && (
+                              <span className="flex items-center gap-1.5 text-xs text-muted hidden sm:flex">
+                                <MapPin className="w-3 h-3" /> {match.lieu}
+                              </span>
+                            )}
                           </div>
 
-                          {/* Équipes et score */}
-                          <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <ImageWithFallback src={teamA?.logo || ''} alt={teamA?.nom || ''} className="w-8 h-8 rounded-full object-contain flex-shrink-0" />
-                              <span className="font-semibold text-primary truncate">{teamA?.nom}</span>
-                            </div>
-                            <div className="text-center flex-shrink-0">
-                              {match.statut !== 'à_venir' && match.score_a !== null && match.score_b !== null
-                                ? <span className="text-xl font-black text-primary">{match.score_a} – {match.score_b}</span>
-                                : <span className="text-lg font-bold text-muted">VS</span>
-                              }
-                            </div>
-                            <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
-                              <span className="font-semibold text-primary truncate">{teamB?.nom}</span>
-                              <ImageWithFallback src={teamB?.logo || ''} alt={teamB?.nom || ''} className="w-8 h-8 rounded-full object-contain flex-shrink-0" />
-                            </div>
+                          {/* Boutons d'action */}
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleEditMatch(match.id)}
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                                isEditing
+                                  ? 'bg-blue-500/20 text-blue-300 border-blue-500/30 hover:bg-blue-500/30'
+                                  : 'bg-panel-soft text-muted border-panel hover:text-primary hover:border-accent-strong/30 hover:bg-white/5'
+                              }`}
+                            >
+                              {isEditing ? <ChevronUp className="w-3 h-3" /> : <Pencil className="w-3 h-3" />}
+                              {isEditing ? 'Fermer' : 'Modifier'}
+                            </button>
+
+                            {isFinished && (
+                              <button
+                                onClick={() => handleOpenButeurs(match.id)}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                                  isButeurs
+                                    ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30'
+                                    : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
+                                }`}
+                              >
+                                {isButeurs ? <ChevronUp className="w-3 h-3" /> : <Goal className="w-3 h-3" />}
+                                {isButeurs ? 'Fermer' : 'Stats'}
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => handleDeleteMatch(match.id)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-all"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span className="hidden sm:inline">Supprimer</span>
+                            </button>
                           </div>
                         </div>
 
-                        {/* Panel modifier le score/statut */}
-                        {isEditing && (
-                          <div className="border-t border-panel p-4 space-y-4 animate-slide-up bg-panel-dark">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              <div>
-                                <label className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Score {teamA?.nom}</label>
-                                <input type="number" min="0" value={current.score_a ?? ''} onChange={e => handleMatchScoreChange(match.id, 'A', e.target.value)} className="input-field pl-3" placeholder="0" />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Score {teamB?.nom}</label>
-                                <input type="number" min="0" value={current.score_b ?? ''} onChange={e => handleMatchScoreChange(match.id, 'B', e.target.value)} className="input-field pl-3" placeholder="0" />
-                              </div>
-                              <div className="sm:col-span-2">
-                                <label htmlFor={`statut-${match.id}`} className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Statut</label>
-                                <select id={`statut-${match.id}`} value={current.statut} onChange={e => handleMatchStatusChange(match.id, e.target.value as any)} className="select-field">
-                                  <option value="à_venir">À venir</option>
-                                  <option value="en_cours">En cours</option>
-                                  <option value="terminé">Terminé</option>
-                                </select>
-                              </div>
+                        {/* Corps de la card: équipes + score */}
+                        <div className="flex items-center gap-4">
+                          {/* Équipe A */}
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className="w-11 h-11 rounded-xl bg-panel-soft p-1 flex-shrink-0 ring-2 ring-slate-700">
+                              <ImageWithFallback src={teamA?.logo || ''} alt={teamA?.nom || ''} className="w-full h-full object-contain" />
                             </div>
-                            <div className="flex flex-col sm:flex-row gap-3">
-                              <button onClick={() => handleSaveMatch(match.id)} className="btn-primary py-2 text-sm flex-1">Enregistrer</button>
-                              <button onClick={() => setEditingMatchId(null)} className="btn-secondary py-2 text-sm flex-1">Annuler</button>
+                            <div className="min-w-0">
+                              <div className="font-display font-bold text-primary truncate">{teamA?.nom ?? '—'}</div>
+                              <div className="text-xs text-muted">{teamA?.classe}</div>
                             </div>
                           </div>
-                        )}
 
-                        {/* Panel buteurs / passeurs */}
-                        {isButeurs && (
-                          <div className="border-t border-panel p-4 space-y-6 animate-slide-up bg-panel-dark">
-                            <p className="text-xs text-muted">Les statistiques sauvegardées remplacent les précédentes. Laissez vide si aucun but/passe.</p>
+                          {/* Score central */}
+                          <div className="flex-shrink-0 text-center">
+                            {!isFinished && !isLive ? (
+                              <div className="px-4 py-2 rounded-xl bg-panel-soft border-panel">
+                                <span className="text-sm font-bold text-muted">VS</span>
+                              </div>
+                            ) : (
+                              <div className={`px-4 py-2 rounded-xl font-black text-2xl tracking-widest ${
+                                isLive
+                                  ? 'bg-red-500/10 border border-red-500/20 text-primary'
+                                  : 'bg-panel-soft border-panel text-primary'
+                              }`}>
+                                {match.score_a ?? 0} — {match.score_b ?? 0}
+                              </div>
+                            )}
+                          </div>
 
-                            {/* BUTS */}
+                          {/* Équipe B */}
+                          <div className="flex items-center gap-3 flex-1 min-w-0 justify-end">
+                            <div className="min-w-0 text-right">
+                              <div className="font-display font-bold text-primary truncate">{teamB?.nom ?? '—'}</div>
+                              <div className="text-xs text-muted">{teamB?.classe}</div>
+                            </div>
+                            <div className="w-11 h-11 rounded-xl bg-panel-soft p-1 flex-shrink-0 ring-2 ring-slate-700">
+                              <ImageWithFallback src={teamB?.logo || ''} alt={teamB?.nom || ''} className="w-full h-full object-contain" />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* ─── Panel Modifier score / statut ─── */}
+                      {isEditing && (
+                        <div className="border-t border-panel p-5 space-y-4 animate-slide-up bg-slate-900/60">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Pencil className="w-4 h-4 text-blue-400" />
+                            <span className="text-sm font-semibold text-primary">Modifier le match</span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-2 text-muted">
+                                <div className="w-5 h-5 rounded-full bg-panel-soft flex items-center justify-center overflow-hidden flex-shrink-0">
+                                  <ImageWithFallback src={teamA?.logo || ''} alt="" className="w-full h-full object-contain" />
+                                </div>
+                                {teamA?.nom ?? 'Équipe A'}
+                              </label>
+                              <input
+                                type="number" min="0"
+                                value={current.score_a ?? ''}
+                                onChange={e => handleMatchScoreChange(match.id, 'A', e.target.value)}
+                                className="w-full px-4 py-3 rounded-xl bg-slate-800/60 border border-slate-700 text-center text-2xl font-black text-primary focus:border-accent-strong outline-none transition-all"
+                                placeholder="0"
+                              />
+                            </div>
+                            <div>
+                              <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-2 text-muted">
+                                <div className="w-5 h-5 rounded-full bg-panel-soft flex items-center justify-center overflow-hidden flex-shrink-0">
+                                  <ImageWithFallback src={teamB?.logo || ''} alt="" className="w-full h-full object-contain" />
+                                </div>
+                                {teamB?.nom ?? 'Équipe B'}
+                              </label>
+                              <input
+                                type="number" min="0"
+                                value={current.score_b ?? ''}
+                                onChange={e => handleMatchScoreChange(match.id, 'B', e.target.value)}
+                                className="w-full px-4 py-3 rounded-xl bg-slate-800/60 border border-slate-700 text-center text-2xl font-black text-primary focus:border-accent-strong outline-none transition-all"
+                                placeholder="0"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label htmlFor={`statut-${match.id}`} className="block text-xs font-semibold uppercase tracking-wider mb-2 text-muted">Statut du match</label>
+                            <select id={`statut-${match.id}`} value={current.statut} onChange={e => handleMatchStatusChange(match.id, e.target.value as any)} className="select-field">
+                              <option value="à_venir">📅 À venir</option>
+                              <option value="en_cours">🔴 En cours</option>
+                              <option value="terminé">⚡ Terminé</option>
+                            </select>
+                          </div>
+
+                          <div className="flex gap-3 pt-1">
+                            <button
+                              onClick={() => handleSaveMatch(match.id)}
+                              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-accent-strong to-emerald-400 text-black hover:shadow-lg hover:shadow-accent-strong/20 transition-all"
+                            >
+                              <Save className="w-4 h-4" /> Enregistrer
+                            </button>
+                            <button
+                              onClick={() => setEditingMatchId(null)}
+                              className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm bg-panel-soft border-panel text-muted hover:text-primary hover:bg-white/5 transition-all"
+                            >
+                              <X className="w-4 h-4" /> Annuler
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ─── Panel Buteurs / Passeurs ─── */}
+                      {isButeurs && (
+                        <div className="border-t border-panel p-5 space-y-6 animate-slide-up bg-slate-900/60">
+                          <div className="flex items-center gap-2">
+                            <Goal className="w-4 h-4 text-emerald-400" />
+                            <span className="text-sm font-semibold text-primary">Buteurs & Passeurs décisifs</span>
+                            <span className="ml-auto text-xs text-muted">Les stats remplacent les précédentes</span>
+                          </div>
+
+                          {/* BUTS */}
+                          <div className="grid sm:grid-cols-2 gap-4">
                             {(['A', 'B'] as const).map(side => {
                               const team = side === 'A' ? teamA : teamB;
                               const players = side === 'A' ? playersA : playersB;
                               const butsCôté = buts.filter(b => b.équipe === side);
                               return (
-                                <div key={side} className="space-y-2">
+                                <div key={side} className="space-y-3 p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/15">
                                   <div className="flex items-center justify-between">
-                                    <span className="text-sm font-semibold text-primary flex items-center gap-2">⚽ Buts — {team?.nom}</span>
-                                    <button onClick={() => addBut(side)} className="text-xs px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 hover:bg-emerald-500/20">+ Ajouter</button>
-                                  </div>
-                                  {butsCôté.map((b, relIdx) => {
-                                    const absIdx = buts.findIndex((x, i) => x === b && buts.filter((y, j) => y.équipe === side && j <= i).length === relIdx + 1);
-                                    const realIdx = buts.indexOf(b, relIdx > 0 ? buts.indexOf(buts.filter(x => x.équipe === side)[relIdx - 1]) + 1 : 0);
-                                    return (
-                                      <div key={relIdx} className="flex gap-2 items-center">
-                                        <select value={b.joueur_id} onChange={e => updateBut(buts.indexOf(b), 'joueur_id', e.target.value)} className="select-field flex-1 text-sm">
-                                          <option value="">— Joueur —</option>
-                                          {players.map(p => <option key={p.id} value={p.id}>#{p.numéro} {p.nom}</option>)}
-                                        </select>
-                                        <input type="number" min="1" max="120" placeholder="min" value={b.minute} onChange={e => updateBut(buts.indexOf(b), 'minute', e.target.value)} className="input-field w-20 text-sm" />
-                                        <button onClick={() => removeBut(buts.indexOf(b))} className="text-red-400 hover:text-red-300 px-2 py-1 text-sm">✕</button>
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-6 h-6 rounded-full bg-panel-soft flex items-center justify-center overflow-hidden">
+                                        <ImageWithFallback src={team?.logo || ''} alt="" className="w-full h-full object-contain" />
                                       </div>
-                                    );
-                                  })}
-                                </div>
-                              );
-                            })}
-
-                            <div className="border-t border-panel pt-4" />
-
-                            {/* PASSES */}
-                            {(['A', 'B'] as const).map(side => {
-                              const team = side === 'A' ? teamA : teamB;
-                              const players = side === 'A' ? playersA : playersB;
-                              const passesCôté = passes.filter(p => p.équipe === side);
-                              return (
-                                <div key={side} className="space-y-2">
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-sm font-semibold text-primary flex items-center gap-2">🎯 Passes déc. — {team?.nom}</span>
-                                    <button onClick={() => addPasse(side)} className="text-xs px-2 py-1 rounded-lg bg-yellow-500/10 text-yellow-300 border border-yellow-500/20 hover:bg-yellow-500/20">+ Ajouter</button>
+                                      <span className="text-sm font-bold text-emerald-400">⚽ {team?.nom}</span>
+                                    </div>
+                                    <button onClick={() => addBut(side)} className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 hover:bg-emerald-500/25 transition-all font-semibold">
+                                      <Plus className="w-3 h-3" /> Ajouter
+                                    </button>
                                   </div>
-                                  {passesCôté.map((p, relIdx) => (
+                                  {butsCôté.length === 0 && <p className="text-xs text-muted/60 italic text-center py-1">Aucun but</p>}
+                                  {butsCôté.map((b, relIdx) => (
                                     <div key={relIdx} className="flex gap-2 items-center">
-                                      <select value={p.joueur_id} onChange={e => updatePasse(passes.indexOf(p), 'joueur_id', e.target.value)} className="select-field flex-1 text-sm">
+                                      <select value={b.joueur_id} onChange={e => updateBut(buts.indexOf(b), 'joueur_id', e.target.value)} className="select-field flex-1 text-xs py-2">
                                         <option value="">— Joueur —</option>
-                                        {players.map(pl => <option key={pl.id} value={pl.id}>#{pl.numéro} {pl.nom}</option>)}
+                                        {players.map(p => <option key={p.id} value={p.id}>#{p.numéro} {p.nom}</option>)}
                                       </select>
-                                      <input type="number" min="1" max="120" placeholder="min" value={p.minute} onChange={e => updatePasse(passes.indexOf(p), 'minute', e.target.value)} className="input-field w-20 text-sm" />
-                                      <button onClick={() => removePasse(passes.indexOf(p))} className="text-red-400 hover:text-red-300 px-2 py-1 text-sm">✕</button>
+                                      <input type="number" min="1" max="120" placeholder="min" value={b.minute} onChange={e => updateBut(buts.indexOf(b), 'minute', e.target.value)}
+                                        className="w-16 px-2 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-xs text-primary text-center focus:border-accent-strong outline-none" />
+                                      <button onClick={() => removeBut(buts.indexOf(b))} className="w-7 h-7 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 flex items-center justify-center transition-all flex-shrink-0">
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
                                     </div>
                                   ))}
                                 </div>
                               );
                             })}
-
-                            <div className="flex flex-col sm:flex-row gap-3 pt-2">
-                              <button onClick={() => handleSaveStats(match.id)} disabled={savingStats} className="btn-primary py-2 text-sm flex-1">
-                                {savingStats ? 'Enregistrement...' : '💾 Sauvegarder les stats'}
-                              </button>
-                              <button onClick={() => setButeurMatchId(null)} className="btn-secondary py-2 text-sm flex-1">Fermer</button>
-                            </div>
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+
+                          <div className="w-full h-px bg-panel" />
+
+                          {/* PASSES */}
+                          <div className="grid sm:grid-cols-2 gap-4">
+                            {(['A', 'B'] as const).map(side => {
+                              const team = side === 'A' ? teamA : teamB;
+                              const players = side === 'A' ? playersA : playersB;
+                              const passesCôté = passes.filter(p => p.équipe === side);
+                              return (
+                                <div key={side} className="space-y-3 p-4 rounded-xl bg-yellow-500/5 border border-yellow-500/15">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-6 h-6 rounded-full bg-panel-soft flex items-center justify-center overflow-hidden">
+                                        <ImageWithFallback src={team?.logo || ''} alt="" className="w-full h-full object-contain" />
+                                      </div>
+                                      <span className="text-sm font-bold text-yellow-400">🎯 {team?.nom}</span>
+                                    </div>
+                                    <button onClick={() => addPasse(side)} className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-yellow-500/15 text-yellow-400 border border-yellow-500/25 hover:bg-yellow-500/25 transition-all font-semibold">
+                                      <Plus className="w-3 h-3" /> Ajouter
+                                    </button>
+                                  </div>
+                                  {passesCôté.length === 0 && <p className="text-xs text-muted/60 italic text-center py-1">Aucune passe</p>}
+                                  {passesCôté.map((p, relIdx) => (
+                                    <div key={relIdx} className="flex gap-2 items-center">
+                                      <select value={p.joueur_id} onChange={e => updatePasse(passes.indexOf(p), 'joueur_id', e.target.value)} className="select-field flex-1 text-xs py-2">
+                                        <option value="">— Joueur —</option>
+                                        {players.map(pl => <option key={pl.id} value={pl.id}>#{pl.numéro} {pl.nom}</option>)}
+                                      </select>
+                                      <input type="number" min="1" max="120" placeholder="min" value={p.minute} onChange={e => updatePasse(passes.indexOf(p), 'minute', e.target.value)}
+                                        className="w-16 px-2 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-xs text-primary text-center focus:border-accent-strong outline-none" />
+                                      <button onClick={() => removePasse(passes.indexOf(p))} className="w-7 h-7 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 flex items-center justify-center transition-all flex-shrink-0">
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          <div className="flex gap-3 pt-1">
+                            <button
+                              onClick={() => handleSaveStats(match.id)}
+                              disabled={savingStats}
+                              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-accent-strong to-emerald-400 text-black hover:shadow-lg hover:shadow-accent-strong/20 transition-all disabled:opacity-50"
+                            >
+                              <Save className="w-4 h-4" />
+                              {savingStats ? 'Enregistrement...' : 'Sauvegarder les stats'}
+                            </button>
+                            <button
+                              onClick={() => setButeurMatchId(null)}
+                              className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm bg-panel-soft border-panel text-muted hover:text-primary hover:bg-white/5 transition-all"
+                            >
+                              <X className="w-4 h-4" /> Fermer
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </TabsContent>
         </Tabs>
