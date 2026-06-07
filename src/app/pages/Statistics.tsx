@@ -2,6 +2,7 @@ import React from 'react';
 import { useÉquipes, useTousLesJoueurs, useMatchs } from '../hooks/useSupabase';
 import { BarChart3, Goal, UserCheck, Trophy, TrendingUp, Zap, Star } from 'lucide-react';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
+import { BallSVG, BootSVG, StarSVG } from '../components/figma/FootIcons';
 
 export const Statistics = () => {
   const { joueurs, chargement: chJ } = useTousLesJoueurs();
@@ -44,23 +45,39 @@ export const Statistics = () => {
   ];
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-8 animate-slide-up">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="w-1 h-8 rounded-full bg-gradient-to-b from-blue-400 to-purple-500" />
-        <div>
-          <h1 className="text-2xl font-display font-bold flex items-center gap-3 text-primary">
-            <BarChart3 className="w-6 h-6 text-blue-400" />
-            Statistiques du Tournoi
-          </h1>
-          <p className="text-sm text-muted mt-0.5">Rapport global des performances et records.</p>
-        </div>
+    <div className="min-h-screen -m-8 relative overflow-hidden">
+      {/* Fond terrain */}
+      <div className="fixed inset-0 pointer-events-none opacity-[0.015] z-0">
+        <svg viewBox="0 0 100 120" className="w-full h-full" preserveAspectRatio="xMidYMid slice">
+          <rect x="5" y="5" width="90" height="110" fill="none" stroke="currentColor" strokeWidth="0.2" className="text-blue-400" />
+          <circle cx="50" cy="60" r="9" fill="none" stroke="currentColor" strokeWidth="0.2" className="text-blue-400" />
+        </svg>
       </div>
+
+      {/* Orbes */}
+      <div className="fixed top-20 left-20 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none z-0 animate-float" />
+      <div className="fixed bottom-32 right-20 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl pointer-events-none z-0 animate-float" style={{ animationDelay: '1.5s' }} />
+
+      <div className="relative z-10 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-8 animate-slide-up">
+        {/* Header */}
+        <div className="glass p-6 rounded-3xl border border-blue-500/20">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center shadow-xl">
+              <BarChart3 className="w-7 h-7 text-white" />
+            </div>
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-display font-black bg-gradient-to-r from-blue-400 via-purple-400 to-purple-500 bg-clip-text text-transparent">
+                Statistiques du Tournoi
+              </h1>
+              <p className="text-sm text-muted mt-0.5">Performances, records et classements individuels</p>
+            </div>
+          </div>
+        </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map(k => (
-          <div key={k.label} className={`glass card-3d p-5 rounded-2xl border-panel ${k.color}`}>
+          <div key={k.label} className={`glass card-3d p-5 rounded-2xl border border-blue-500/20 hover:border-blue-500/40 transition-all ${k.color}`}>
             <div className="flex items-start justify-between mb-3">
               <div className={`p-3 rounded-xl bg-panel-soft`}><k.icon className={`w-5 h-5 ${k.textColor}`} /></div>
             </div>
@@ -74,9 +91,9 @@ export const Statistics = () => {
       <div className="grid gap-6 lg:grid-cols-3">
 
         {/* MVP */}
-        <div className="glass rounded-2xl border-panel p-6">
+        <div className="glass rounded-2xl border border-amber-500/20 p-6">
           <h2 className="text-base font-display font-bold mb-4 flex items-center gap-2 text-primary">
-            <Star className="w-5 h-5 text-amber-400" /> Meilleurs du tournoi
+            <StarSVG className="w-5 h-5 text-amber-400" /> Meilleurs du tournoi
           </h2>
           <div className="space-y-3">
             {mvpList.map((player, i) => {
@@ -101,7 +118,7 @@ export const Statistics = () => {
         </div>
 
         {/* Perf équipes */}
-        <div className="glass rounded-2xl border-panel p-6">
+        <div className="glass rounded-2xl border border-accent-strong/20 p-6">
           <h2 className="text-base font-display font-bold mb-4 flex items-center gap-2 text-primary">
             <Trophy className="w-5 h-5 text-accent-strong" /> Performance équipes
           </h2>
@@ -125,7 +142,7 @@ export const Statistics = () => {
         </div>
 
         {/* Moyenne buts */}
-        <div className="glass rounded-2xl border-panel p-6 flex flex-col">
+        <div className="glass rounded-2xl border border-amber-500/20 p-6 flex flex-col">
           <h2 className="text-base font-display font-bold mb-4 flex items-center gap-2 text-primary">
             <Zap className="w-5 h-5 text-amber-400" /> Intensité offensive
           </h2>
@@ -148,10 +165,10 @@ export const Statistics = () => {
       {/* Top buteurs + Passeurs */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Buteurs */}
-        <div className="glass rounded-2xl border-panel p-6">
+        <div className="glass rounded-2xl border border-emerald-500/20 p-6">
           <div className="flex items-center justify-between mb-5">
             <h2 className="text-base font-display font-bold flex items-center gap-2 text-primary">
-              <Goal className="w-5 h-5 text-emerald-400" /> Top Buteurs
+              <BallSVG className="w-5 h-5 text-emerald-400" /> Top Buteurs
             </h2>
             <span className="text-xs text-muted">Top 10</span>
           </div>
@@ -182,10 +199,10 @@ export const Statistics = () => {
         </div>
 
         {/* Passeurs */}
-        <div className="glass rounded-2xl border-panel p-6">
+        <div className="glass rounded-2xl border border-blue-500/20 p-6">
           <div className="flex items-center justify-between mb-5">
             <h2 className="text-base font-display font-bold flex items-center gap-2 text-primary">
-              <UserCheck className="w-5 h-5 text-blue-400" /> Top Passeurs
+              <BootSVG className="w-5 h-5 text-blue-400" /> Top Passeurs
             </h2>
             <span className="text-xs text-muted">Top 10</span>
           </div>
